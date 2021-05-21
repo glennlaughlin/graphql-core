@@ -1,7 +1,7 @@
 from json import dumps
 from typing import Optional
 
-from pytest import raises  # type: ignore
+from pytest import raises
 
 from graphql.error import GraphQLSyntaxError
 from graphql.language import Lexer, Source, TokenKind, parse
@@ -75,23 +75,6 @@ class ExpectStripped:
 
 
 def describe_strip_ignored_characters():
-    def asserts_that_a_source_was_provided():
-        with raises(
-            TypeError, match="missing 1 required positional argument: 'source'"
-        ):
-            # noinspection PyArgumentList
-            strip_ignored_characters()  # type: ignore
-        with raises(
-            TypeError, match="Must provide string or Source. Received: None\\."
-        ):
-            # noinspection PyTypeChecker
-            strip_ignored_characters(None)  # type: ignore
-
-    def asserts_that_a_valid_source_was_provided():
-        with raises(TypeError, match="Must provide string or Source. Received: {}\\."):
-            # noinspection PyTypeChecker
-            strip_ignored_characters({})  # type: ignore
-
     def strips_ignored_characters_from_graphql_query_document():
         query = dedent(
             """

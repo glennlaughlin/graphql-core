@@ -1,7 +1,7 @@
 import sys
-from asyncio import Event, ensure_future, sleep
+from asyncio import CancelledError, Event, ensure_future, sleep
 
-from pytest import mark, raises  # type: ignore
+from pytest import mark, raises
 
 from graphql.subscription.map_async_iterator import MapAsyncIterator
 
@@ -457,3 +457,49 @@ def describe_map_async_iterator():
             await anext(doubles)
         assert not doubles.is_closed
         assert not iterator.is_closed
+
+    @mark.asyncio
+    async def can_cancel_async_iterator_while_waiting():
+        class Iterator:
+            def __init__(self):
+                self.is_closed = False
+                self.value = 1
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                try:
+                    await sleep(0.5)
+                    return self.value  # pragma: no cover
+                except CancelledError:
+                    self.value = -1
+                    raise
+
+            async def aclose(self):
+                self.is_closed = True
+
+        iterator = Iterator()
+        doubles = MapAsyncIterator(iterator, lambda x: x + x)  # pragma: no cover exit
+        cancelled = False
+
+        async def iterator_task():
+            nonlocal cancelled
+            try:
+                async for _ in doubles:
+                    assert False  # pragma: no cover
+            except CancelledError:
+                cancelled = True
+
+        task = ensure_future(iterator_task())
+        await sleep(0.05)
+        assert not cancelled
+        assert not doubles.is_closed
+        assert iterator.value == 1
+        assert not iterator.is_closed
+        task.cancel()
+        await sleep(0.05)
+        assert cancelled
+        assert iterator.value == -1
+        assert doubles.is_closed
+        assert iterator.is_closed

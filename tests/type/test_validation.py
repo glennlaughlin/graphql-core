@@ -1,7 +1,7 @@
 from operator import attrgetter
 from typing import Any, List, Union
 
-from pytest import mark, raises  # type: ignore
+from pytest import mark, raises
 
 from graphql.language import parse, DirectiveLocation
 from graphql.pyutils import inspect
@@ -115,8 +115,7 @@ get_name = attrgetter("__class__.__name__")
 
 def schema_with_field_type(type_):
     return GraphQLSchema(
-        query=GraphQLObjectType(name="Query", fields={"f": GraphQLField(type_)}),
-        types=[type_],
+        query=GraphQLObjectType(name="Query", fields={"f": GraphQLField(type_)})
     )
 
 
@@ -520,17 +519,19 @@ def describe_type_system_field_args_must_be_properly_named():
         )
         assert validate_schema(schema) == []
 
-    def reject_field_args_with_invalid_names():
-        QueryType = GraphQLObjectType(
-            "SomeObject",
-            {
-                "badField": GraphQLField(
-                    GraphQLString,
-                    args={"bad-name-with-dashes": GraphQLArgument(GraphQLString)},
-                )
-            },
+    def rejects_field_args_with_invalid_names():
+        schema = schema_with_field_type(
+            GraphQLObjectType(
+                "SomeObject",
+                {
+                    "badField": GraphQLField(
+                        GraphQLString,
+                        args={"bad-name-with-dashes": GraphQLArgument(GraphQLString)},
+                    )
+                },
+            )
         )
-        schema = GraphQLSchema(QueryType)
+
         msg = validate_schema(schema)[0].message
         assert msg == (
             "Names must match /^[_a-zA-Z][_a-zA-Z0-9]*$/"
@@ -939,6 +940,28 @@ def describe_type_system_input_objects_must_have_fields():
             },
         ]
 
+    def rejects_an_input_object_type_with_required_arguments_that_is_deprecated():
+        schema = build_schema(
+            """
+            type Query {
+              field(arg: SomeInputObject): String
+            }
+
+            input SomeInputObject {
+              badField: String! @deprecated
+              optionalField: String @deprecated
+              anotherOptionalField: String! = "" @deprecated
+            }
+            """
+        )
+        assert validate_schema(schema) == [
+            {
+                "message": "Required input field SomeInputObject.badField"
+                " cannot be deprecated.",
+                "locations": [(7, 33), (7, 25)],
+            }
+        ]
+
 
 def describe_type_system_enum_types_must_be_well_defined():
     def rejects_an_enum_type_without_values():
@@ -971,7 +994,7 @@ def describe_type_system_enum_types_must_be_well_defined():
         ]
 
     def rejects_an_enum_type_with_incorrectly_named_values():
-        def schema_with_enum(name):
+        def schema_with_enum(name: str) -> GraphQLSchema:
             return schema_with_field_type(
                 GraphQLEnumType("SomeEnum", {name: GraphQLEnumValue(1)})
             )
@@ -1008,17 +1031,17 @@ def describe_type_system_enum_types_must_be_well_defined():
 
 
 def describe_type_system_object_fields_must_have_output_types():
-    def _schema_with_object_field_of_type(field_type: GraphQLOutputType):
-        if is_output_type(field_type):
-            field = GraphQLField(field_type)
+    def _schema_with_object_field(type_: GraphQLOutputType) -> GraphQLSchema:
+        if is_output_type(type_):
+            field = GraphQLField(type_)
         else:
             # invalid field cannot be built with Python directly
             with raises(TypeError) as exc_info:
-                GraphQLField(field_type)
+                GraphQLField(type_)
             assert str(exc_info.value) == "Field type must be an output type."
             # therefore we need to monkey-patch a valid field
             field = GraphQLField(GraphQLString)
-            field.type = field_type
+            field.type = type_
         bad_object_type = GraphQLObjectType("BadObject", {"badField": field})
         return GraphQLSchema(
             GraphQLObjectType("Query", {"f": GraphQLField(bad_object_type)}),
@@ -1027,12 +1050,12 @@ def describe_type_system_object_fields_must_have_output_types():
 
     @mark.parametrize("type_", output_types, ids=get_name)
     def accepts_an_output_type_as_an_object_field_type(type_):
-        schema = _schema_with_object_field_of_type(type_)
+        schema = _schema_with_object_field(type_)
         assert validate_schema(schema) == []
 
     def rejects_an_empty_object_field_type():
         # noinspection PyTypeChecker
-        schema = _schema_with_object_field_of_type(None)  # type: ignore
+        schema = _schema_with_object_field(None)  # type: ignore
         assert validate_schema(schema) == [
             {
                 "message": "The type of BadObject.badField must be Output Type"
@@ -1042,7 +1065,7 @@ def describe_type_system_object_fields_must_have_output_types():
 
     @mark.parametrize("type_", not_output_types, ids=get_name)
     def rejects_a_non_output_type_as_an_object_field_type(type_):
-        schema = _schema_with_object_field_of_type(type_)
+        schema = _schema_with_object_field(type_)
         assert validate_schema(schema) == [
             {
                 "message": "The type of BadObject.badField must be Output Type"
@@ -1052,7 +1075,7 @@ def describe_type_system_object_fields_must_have_output_types():
 
     @mark.parametrize("type_", not_graphql_types, ids=get_name)
     def rejects_a_non_type_value_as_an_object_field_type(type_):
-        schema = _schema_with_object_field_of_type(type_)
+        schema = _schema_with_object_field(type_)
         assert validate_schema(schema) == [
             {
                 "message": "The type of BadObject.badField must be Output Type"
@@ -1325,21 +1348,23 @@ def describe_type_system_interface_extensions_should_be_valid():
 
 
 def describe_type_system_interface_fields_must_have_output_types():
-    def _schema_with_interface_field_of_type(field_type: GraphQLOutputType):
-        if is_output_type(field_type):
-            field = GraphQLField(field_type)
+    def _schema_with_interface_field(type_: GraphQLOutputType) -> GraphQLSchema:
+        if is_output_type(type_):
+            field = GraphQLField(type_)
         else:
             # invalid field cannot be built with Python directly
             with raises(TypeError) as exc_info:
-                GraphQLField(field_type)
+                GraphQLField(type_)
             assert str(exc_info.value) == "Field type must be an output type."
             # therefore we need to monkey-patch a valid field
             field = GraphQLField(GraphQLString)
-            field.type = field_type
-        bad_interface_type = GraphQLInterfaceType("BadInterface", {"badField": field})
+            field.type = type_
+        fields = {"badField": field}
+
+        bad_interface_type = GraphQLInterfaceType("BadInterface", fields)
         bad_implementing_type = GraphQLObjectType(
             "BadImplementing",
-            {"badField": field},
+            fields,
             interfaces=[bad_interface_type],
         )
         return GraphQLSchema(
@@ -1349,12 +1374,12 @@ def describe_type_system_interface_fields_must_have_output_types():
 
     @mark.parametrize("type_", output_types, ids=get_name)
     def accepts_an_output_type_as_an_interface_field_type(type_):
-        schema = _schema_with_interface_field_of_type(type_)
+        schema = _schema_with_interface_field(type_)
         assert validate_schema(schema) == []
 
     def rejects_an_empty_interface_field_type():
         # noinspection PyTypeChecker
-        schema = _schema_with_interface_field_of_type(None)  # type: ignore
+        schema = _schema_with_interface_field(None)  # type: ignore
         assert validate_schema(schema) == [
             {
                 "message": "The type of BadImplementing.badField must be Output Type"
@@ -1368,7 +1393,7 @@ def describe_type_system_interface_fields_must_have_output_types():
 
     @mark.parametrize("type_", not_output_types, ids=get_name)
     def rejects_a_non_output_type_as_an_interface_field_type(type_):
-        schema = _schema_with_interface_field_of_type(type_)
+        schema = _schema_with_interface_field(type_)
         assert validate_schema(schema) == [
             {
                 "message": "The type of BadImplementing.badField must be Output Type"
@@ -1382,7 +1407,7 @@ def describe_type_system_interface_fields_must_have_output_types():
 
     @mark.parametrize("type_", not_graphql_types, ids=get_name)
     def rejects_a_non_type_value_as_an_interface_field_type(type_):
-        schema = _schema_with_interface_field_of_type(type_)
+        schema = _schema_with_interface_field(type_)
         assert validate_schema(schema) == [
             {
                 "message": "The type of BadImplementing.badField must be Output Type"
@@ -1476,20 +1501,21 @@ def describe_type_system_interface_fields_must_have_output_types():
 
 
 def describe_type_system_arguments_must_have_input_types():
-    def _schema_with_arg_of_type(arg_type: GraphQLInputType):
-        if is_input_type(arg_type):
-            argument = GraphQLArgument(arg_type)
+    def _schema_with_arg(type_: GraphQLInputType) -> GraphQLSchema:
+        if is_input_type(type_):
+            argument = GraphQLArgument(type_)
         else:
             # invalid argument cannot be built with Python directly
             with raises(TypeError) as exc_info:
-                GraphQLArgument(arg_type)
+                GraphQLArgument(type_)
             assert str(exc_info.value) == "Argument type must be a GraphQL input type."
             # therefore we need to monkey-patch a valid argument
             argument = GraphQLArgument(GraphQLString)
-            argument.type = arg_type
+            argument.type = type_
+        args = {"badArg": argument}
         bad_object_type = GraphQLObjectType(
             "BadObject",
-            {"badField": GraphQLField(GraphQLString, args={"badArg": argument})},
+            {"badField": GraphQLField(GraphQLString, args)},
         )
         return GraphQLSchema(
             GraphQLObjectType("Query", {"f": GraphQLField(bad_object_type)}),
@@ -1497,19 +1523,19 @@ def describe_type_system_arguments_must_have_input_types():
                 GraphQLDirective(
                     "BadDirective",
                     [DirectiveLocation.QUERY],
-                    {"badArg": argument},
+                    args,
                 )
             ],
         )
 
     @mark.parametrize("type_", input_types, ids=get_name)
     def accepts_an_input_type_as_a_field_arg_type(type_):
-        schema = _schema_with_arg_of_type(type_)
+        schema = _schema_with_arg(type_)
         assert validate_schema(schema) == []
 
     def rejects_an_empty_field_arg_type():
         # noinspection PyTypeChecker
-        schema = _schema_with_arg_of_type(None)  # type: ignore
+        schema = _schema_with_arg(None)  # type: ignore
         assert validate_schema(schema) == [
             {
                 "message": "The type of @BadDirective(badArg:) must be Input Type"
@@ -1523,7 +1549,7 @@ def describe_type_system_arguments_must_have_input_types():
 
     @mark.parametrize("type_", not_input_types, ids=get_name)
     def rejects_a_non_input_type_as_a_field_arg_type(type_):
-        schema = _schema_with_arg_of_type(type_)
+        schema = _schema_with_arg(type_)
         assert validate_schema(schema) == [
             {
                 "message": "The type of @BadDirective(badArg:) must be Input Type"
@@ -1537,7 +1563,7 @@ def describe_type_system_arguments_must_have_input_types():
 
     @mark.parametrize("type_", not_graphql_types, ids=get_name)
     def rejects_a_non_type_value_as_a_field_arg_type(type_):
-        schema = _schema_with_arg_of_type(type_)
+        schema = _schema_with_arg(type_)
         assert validate_schema(schema) == [
             {
                 "message": "The type of @BadDirective(badArg:) must be Input Type"
@@ -1548,6 +1574,37 @@ def describe_type_system_arguments_must_have_input_types():
                 f" but got: {inspect(type_)}."
             },
             {"message": f"Expected GraphQL named type but got: {inspect(type_)}."},
+        ]
+
+    def rejects_a_required_argument_that_is_deprecated():
+        schema = build_schema(
+            """
+            directive @BadDirective(
+              badArg: String! @deprecated
+              optionalArg: String @deprecated
+              anotherOptionalArg: String! = "" @deprecated
+            ) on FIELD
+
+            type Query {
+              test(
+                badArg: String! @deprecated
+                optionalArg: String @deprecated
+                anotherOptionalArg: String! = "" @deprecated
+              ): String
+            }
+            """
+        )
+        assert validate_schema(schema) == [
+            {
+                "message": "Required argument @BadDirective(badArg:)"
+                " cannot be deprecated.",
+                "locations": [(3, 31), (3, 23)],
+            },
+            {
+                "message": "Required argument Query.test(badArg:)"
+                " cannot be deprecated.",
+                "locations": [(10, 33), (10, 25)],
+            },
         ]
 
     def rejects_a_non_input_type_as_a_field_arg_with_locations():
@@ -1592,19 +1649,19 @@ def describe_type_system_arguments_must_have_input_types():
 
 
 def describe_type_system_input_object_fields_must_have_input_types():
-    def _schema_with_input_field_of_type(input_field_type: GraphQLInputType):
-        if is_input_type(input_field_type):
-            input_field = GraphQLInputField(input_field_type)
+    def _schema_with_input_field(type_: GraphQLInputType) -> GraphQLSchema:
+        if is_input_type(type_):
+            input_field = GraphQLInputField(type_)
         else:
             # invalid input field cannot be built with Python directly
             with raises(TypeError) as exc_info:
-                GraphQLInputField(input_field_type)
+                GraphQLInputField(type_)
             assert str(exc_info.value) == (
                 "Input field type must be a GraphQL input type."
             )
             # therefore we need to monkey-patch a valid input field
             input_field = GraphQLInputField(GraphQLString)
-            input_field.type = input_field_type
+            input_field.type = type_
         bad_input_object_type = GraphQLInputObjectType(
             "BadInputObject", {"badField": input_field}
         )
@@ -1622,12 +1679,12 @@ def describe_type_system_input_object_fields_must_have_input_types():
 
     @mark.parametrize("type_", input_types, ids=get_name)
     def accepts_an_input_type_as_an_input_field_type(type_):
-        schema = _schema_with_input_field_of_type(type_)
+        schema = _schema_with_input_field(type_)
         assert validate_schema(schema) == []
 
     def rejects_an_empty_input_field_type():
         # noinspection PyTypeChecker
-        schema = _schema_with_input_field_of_type(None)  # type: ignore
+        schema = _schema_with_input_field(None)  # type: ignore
         assert validate_schema(schema) == [
             {
                 "message": "The type of BadInputObject.badField must be Input Type"
@@ -1637,7 +1694,7 @@ def describe_type_system_input_object_fields_must_have_input_types():
 
     @mark.parametrize("type_", not_input_types, ids=get_name)
     def rejects_a_non_input_type_as_an_input_field_type(type_):
-        schema = _schema_with_input_field_of_type(type_)
+        schema = _schema_with_input_field(type_)
         assert validate_schema(schema) == [
             {
                 "message": "The type of BadInputObject.badField must be Input Type"
@@ -1647,7 +1704,7 @@ def describe_type_system_input_object_fields_must_have_input_types():
 
     @mark.parametrize("type_", not_graphql_types, ids=get_name)
     def rejects_a_non_type_value_as_an_input_field_type(type_):
-        schema = _schema_with_input_field_of_type(type_)
+        schema = _schema_with_input_field(type_)
         assert validate_schema(schema) == [
             {
                 "message": "The type of BadInputObject.badField must be Input Type"

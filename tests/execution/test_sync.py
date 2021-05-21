@@ -2,7 +2,7 @@ from gc import collect
 from inspect import isawaitable
 from typing import Awaitable, cast
 
-from pytest import mark, raises  # type: ignore
+from pytest import mark, raises
 
 from graphql import graphql_sync
 from graphql.execution import execute, execute_sync
@@ -137,13 +137,6 @@ def describe_execute_synchronously_when_possible():
             validation_errors = validate(schema, parse(doc))
             result = graphql_sync(schema, doc)
             assert result == (None, validation_errors)
-
-        def raises_a_type_error_when_no_query_is_passed():
-            with raises(TypeError) as exc_info:
-                # noinspection PyTypeChecker
-                assert graphql_sync(schema, None)  # type: ignore
-            msg = str(exc_info.value)
-            assert msg == "Must provide Source. Received: None."
 
         def does_not_return_an_awaitable_for_sync_execution():
             doc = "query Example { syncField }"

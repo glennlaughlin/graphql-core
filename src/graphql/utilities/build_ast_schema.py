@@ -1,17 +1,7 @@
-from typing import Union
+from typing import Any, Dict, Union
 
-from ..language import (
-    DocumentNode,
-    Source,
-    parse,
-)
-from ..type import (
-    GraphQLDeprecatedDirective,
-    GraphQLIncludeDirective,
-    GraphQLSchema,
-    GraphQLSkipDirective,
-    GraphQLSpecifiedByDirective,
-)
+from ..language import DocumentNode, Source, parse
+from ..type import GraphQLSchema, specified_directives
 from .extend_schema import extend_schema_impl
 
 __all__ = [
@@ -49,15 +39,19 @@ def build_ast_schema(
 
         assert_valid_sdl(document_ast)
 
-    empty_schema_config = GraphQLSchema(
+    empty_schema_kwargs: Dict[str, Any] = dict(
+        query=None,
+        mutation=None,
+        subscription=None,
         description=None,
         types=[],
         directives=[],
         extensions=None,
+        ast_node=None,
         extension_ast_nodes=[],
         assume_valid=False,
-    ).to_kwargs()
-    schema_kwargs = extend_schema_impl(empty_schema_config, document_ast, assume_valid)
+    )
+    schema_kwargs = extend_schema_impl(empty_schema_kwargs, document_ast, assume_valid)
 
     if not schema_kwargs["ast_node"]:
         for type_ in schema_kwargs["types"]:
@@ -74,14 +68,9 @@ def build_ast_schema(
 
     directives = schema_kwargs["directives"]
     # If specified directives were not explicitly declared, add them.
-    if not any(directive.name == "skip" for directive in directives):
-        directives.append(GraphQLSkipDirective)
-    if not any(directive.name == "include" for directive in directives):
-        directives.append(GraphQLIncludeDirective)
-    if not any(directive.name == "deprecated" for directive in directives):
-        directives.append(GraphQLDeprecatedDirective)
-    if not any(directive.name == "specifiedBy" for directive in directives):
-        directives.append(GraphQLSpecifiedByDirective)
+    for std_directive in specified_directives:
+        if all(directive.name != std_directive.name for directive in directives):
+            directives.append(std_directive)
 
     return GraphQLSchema(**schema_kwargs)
 

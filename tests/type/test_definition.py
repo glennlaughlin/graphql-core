@@ -1,7 +1,7 @@
 from math import isnan, nan
 from typing import cast
 
-from pytest import mark, raises  # type: ignore
+from pytest import mark, raises
 
 from graphql.error import GraphQLError
 from graphql.language import (
@@ -139,6 +139,10 @@ def describe_type_system_scalars():
         assert (
             scalar.parse_literal(parse_value('{foo: "bar"}'))
             == "parse_value: {'foo': 'bar'}"
+        )
+        assert (
+            scalar.parse_literal(parse_value("{foo: { bar: $var } }"), {"var": "baz"})
+            == "parse_value: {'foo': {'bar': 'baz'}}"
         )
 
     def accepts_a_scalar_type_with_ast_node_and_extension_ast_nodes():
@@ -453,6 +457,7 @@ def describe_type_system_objects():
         assert arg.description is None
         assert arg.type is ScalarType
         assert arg.default_value is Undefined
+        assert arg.deprecation_reason is None
         assert arg.extensions is None
         assert arg.ast_node is None
         assert field.resolve is None
@@ -1464,6 +1469,7 @@ def describe_type_system_input_objects():
             assert input_field.description is None
             assert input_field.type is ScalarType
             assert input_field.default_value is Undefined
+            assert input_field.deprecation_reason is None
             assert input_field.extensions is None
             assert input_field.ast_node is None
             assert input_field.out_name is None
@@ -1487,6 +1493,7 @@ def describe_type_system_input_objects():
             assert input_field.description is None
             assert input_field.type is ScalarType
             assert input_field.default_value is Undefined
+            assert input_field.deprecation_reason is None
             assert input_field.extensions is None
             assert input_field.ast_node is None
             assert input_field.out_name is None
@@ -1624,6 +1631,12 @@ def describe_type_system_arguments():
             GraphQLArgument(GraphQLString, description=[])  # type: ignore
         assert str(exc_info.value) == "Argument description must be a string."
 
+    def rejects_an_argument_with_an_incorrectly_typed_deprecation_reason():
+        with raises(TypeError) as exc_info:
+            # noinspection PyTypeChecker
+            GraphQLArgument(GraphQLString, deprecation_reason=[])  # type: ignore
+        assert str(exc_info.value) == "Argument deprecation reason must be a string."
+
     def rejects_an_argument_with_an_incorrect_out_name():
         # This is an extension of GraphQL.js.
         with raises(TypeError) as exc_info:
@@ -1682,6 +1695,12 @@ def describe_type_system_input_fields():
             # noinspection PyTypeChecker
             GraphQLInputField(GraphQLString, description=[])  # type: ignore
         assert str(exc_info.value) == "Input field description must be a string."
+
+    def rejects_an_input_field_with_an_incorrectly_typed_deprecation_reason():
+        with raises(TypeError) as exc_info:
+            # noinspection PyTypeChecker
+            GraphQLInputField(GraphQLString, deprecation_reason=[])  # type: ignore
+        assert str(exc_info.value) == "Input field deprecation reason must be a string."
 
     def rejects_an_input_field_with_an_incorrect_out_name():
         # This is an extension of GraphQL.js.

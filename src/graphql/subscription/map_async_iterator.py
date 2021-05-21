@@ -1,4 +1,4 @@
-from asyncio import Event, ensure_future, Future, wait
+from asyncio import CancelledError, Event, Future, ensure_future, wait
 from concurrent.futures import FIRST_COMPLETED
 from inspect import isasyncgen, isawaitable
 from typing import cast, Any, AsyncIterable, Callable, Optional, Set, Type, Union
@@ -30,9 +30,11 @@ class MapAsyncIterator:
         self._close_event = Event()
 
     def __aiter__(self) -> "MapAsyncIterator":
+        """Get the iterator object."""
         return self
 
     async def __anext__(self) -> Any:
+        """Get the next value of the iterator."""
         if self.is_closed:
             if not isasyncgen(self.iterator):
                 raise StopAsyncIteration
@@ -43,9 +45,17 @@ class MapAsyncIterator:
             aclose = ensure_future(self._close_event.wait())
             anext = ensure_future(self.iterator.__anext__())
 
-            pending: Set[Future] = (
-                await wait([aclose, anext], return_when=FIRST_COMPLETED)
-            )[1]
+            try:
+                pending: Set[Future] = (
+                    await wait([aclose, anext], return_when=FIRST_COMPLETED)
+                )[1]
+            except CancelledError:
+                # cancel underlying tasks and close
+                aclose.cancel()
+                anext.cancel()
+                await self.aclose()
+                raise  # re-raise the cancellation
+
             for task in pending:
                 task.cancel()
 
@@ -71,6 +81,7 @@ class MapAsyncIterator:
         value: Optional[BaseException] = None,
         traceback: Optional[TracebackType] = None,
     ) -> None:
+        """Throw an exception into the asynchronous iterator."""
         if not self.is_closed:
             athrow = getattr(self.iterator, "athrow", None)
             if athrow:
@@ -90,6 +101,7 @@ class MapAsyncIterator:
                 raise value
 
     async def aclose(self) -> None:
+        """Close the iterator."""
         if not self.is_closed:
             aclose = getattr(self.iterator, "aclose", None)
             if aclose:
@@ -101,10 +113,12 @@ class MapAsyncIterator:
 
     @property
     def is_closed(self) -> bool:
+        """Check whether the iterator is closed."""
         return self._close_event.is_set()
 
     @is_closed.setter
     def is_closed(self, value: bool) -> None:
+        """Mark the iterator as closed."""
         if value:
             self._close_event.set()
         else:

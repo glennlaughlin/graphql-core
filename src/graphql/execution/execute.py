@@ -58,6 +58,7 @@ from ..type import (
     is_abstract_type,
     is_leaf_type,
     is_list_type,
+    is_named_type,
     is_non_null_type,
     is_object_type,
 )
@@ -131,9 +132,12 @@ class ExecutionResult:
     @property
     def formatted(self) -> Dict[str, Any]:
         """Get execution result formatted according to the specification."""
+        errors = (
+            None if self.errors is None else [error.formatted for error in self.errors]
+        )
         if self.extensions is None:
-            return dict(data=self.data, errors=self.errors)
-        return dict(data=self.data, errors=self.errors, extensions=self.extensions)
+            return dict(data=self.data, errors=errors)
+        return dict(data=self.data, errors=errors, extensions=self.extensions)
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, dict):
@@ -331,8 +335,6 @@ class ExecutionContext:
         # Errors from sub-fields of a NonNull type may propagate to the top level, at
         # which point we still log the error and null the parent field, which in this
         # case is the entire response.
-        #
-        # Similar to complete_value_catching_error.
         try:
             # noinspection PyArgumentList
             result = (
@@ -595,6 +597,7 @@ class ExecutionContext:
         if not field_def:
             return Undefined
 
+        return_type = field_def.type
         resolve_fn = field_def.resolve or self.field_resolver
 
         if self.middleware_manager:
@@ -604,29 +607,6 @@ class ExecutionContext:
 
         # Get the resolve function, regardless of if its result is normal or abrupt
         # (error).
-        result = self.resolve_field_value_or_error(
-            field_def, field_nodes, resolve_fn, source, info
-        )
-
-        return self.complete_value_catching_error(
-            field_def.type, field_nodes, info, path, result
-        )
-
-    def resolve_field_value_or_error(
-        self,
-        field_def: GraphQLField,
-        field_nodes: List[FieldNode],
-        resolve_fn: GraphQLFieldResolver,
-        source: Any,
-        info: GraphQLResolveInfo,
-    ) -> Union[Exception, Any]:
-        """Resolve field to a value or an error.
-
-        Isolates the "ReturnOrAbrupt" behavior to not de-opt the resolve_field()
-        method. Returns the result of resolveFn or the abrupt-return Error object.
-
-        For internal use only.
-        """
         try:
             # Build a dictionary of arguments from the field.arguments AST, using the
             # variables scope to fulfill any variable references.
@@ -635,72 +615,51 @@ class ExecutionContext:
             # Note that contrary to the JavaScript implementation, we pass the context
             # value as part of the resolve info.
             result = resolve_fn(source, info, **args)
+
+            completed: AwaitableOrValue[Any]
             if self.is_awaitable(result):
                 # noinspection PyShadowingNames
                 async def await_result() -> Any:
                     try:
-                        return await result
-                    except Exception as error:
-                        return error
+                        completed = self.complete_value(
+                            return_type, field_nodes, info, path, await result
+                        )
+                        if self.is_awaitable(completed):
+                            return await completed
+                        return completed
+                    except Exception as raw_error:
+                        error = located_error(raw_error, field_nodes, path.as_list())
+                        self.handle_field_error(error, return_type)
+                        return None
 
                 return await_result()
-            return result
-        except Exception as error:
-            return error
 
-    def complete_value_catching_error(
-        self,
-        return_type: GraphQLOutputType,
-        field_nodes: List[FieldNode],
-        info: GraphQLResolveInfo,
-        path: Path,
-        result: Any,
-    ) -> AwaitableOrValue[Any]:
-        """Complete a value while catching an error.
-
-        This is a small wrapper around completeValue which detects and logs errors in
-        the execution context.
-        """
-        completed: AwaitableOrValue[Any]
-        try:
-            if self.is_awaitable(result):
-
-                async def await_result() -> Any:
-                    value = self.complete_value(
-                        return_type, field_nodes, info, path, await result
-                    )
-                    if self.is_awaitable(value):
-                        return await value
-                    return value
-
-                completed = await_result()
-            else:
-                completed = self.complete_value(
-                    return_type, field_nodes, info, path, result
-                )
+            completed = self.complete_value(
+                return_type, field_nodes, info, path, result
+            )
             if self.is_awaitable(completed):
                 # noinspection PyShadowingNames
                 async def await_completed() -> Any:
                     try:
                         return await completed
-                    except Exception as error:
-                        self.handle_field_error(error, field_nodes, path, return_type)
+                    except Exception as raw_error:
+                        error = located_error(raw_error, field_nodes, path.as_list())
+                        self.handle_field_error(error, return_type)
+                        return None
 
                 return await_completed()
+
             return completed
-        except Exception as error:
-            self.handle_field_error(error, field_nodes, path, return_type)
+        except Exception as raw_error:
+            error = located_error(raw_error, field_nodes, path.as_list())
+            self.handle_field_error(error, return_type)
             return None
 
     def handle_field_error(
         self,
-        raw_error: Exception,
-        field_nodes: List[FieldNode],
-        path: Path,
+        error: GraphQLError,
         return_type: GraphQLOutputType,
     ) -> None:
-        error = located_error(raw_error, field_nodes, path.as_list())
-
         # If the field type is non-nullable, then it is resolved without any protection
         # from errors, however it still properly locates the error.
         if is_non_null_type(return_type):
@@ -802,7 +761,7 @@ class ExecutionContext:
         info: GraphQLResolveInfo,
         path: Path,
         result: Iterable[Any],
-    ) -> AwaitableOrValue[Any]:
+    ) -> AwaitableOrValue[List[Any]]:
         """Complete a list value.
 
         Complete a list value by completing each item in the list with the inner type.
@@ -825,10 +784,48 @@ class ExecutionContext:
         for index, item in enumerate(result):
             # No need to modify the info object containing the path, since from here on
             # it is not ever accessed by resolver functions.
-            field_path = path.add_key(index, None)
-            completed_item = self.complete_value_catching_error(
-                item_type, field_nodes, info, field_path, item
-            )
+            item_path = path.add_key(index, None)
+            completed_item: AwaitableOrValue[Any]
+            if is_awaitable(item):
+                # noinspection PyShadowingNames
+                async def await_completed(item: Any, item_path: Path) -> Any:
+                    try:
+                        completed = self.complete_value(
+                            item_type, field_nodes, info, item_path, await item
+                        )
+                        if is_awaitable(completed):
+                            return await completed
+                        return completed
+                    except Exception as raw_error:
+                        error = located_error(
+                            raw_error, field_nodes, item_path.as_list()
+                        )
+                        self.handle_field_error(error, item_type)
+                        return None
+
+                completed_item = await_completed(item, item_path)
+            else:
+                try:
+                    completed_item = self.complete_value(
+                        item_type, field_nodes, info, item_path, item
+                    )
+                    if is_awaitable(completed_item):
+                        # noinspection PyShadowingNames
+                        async def await_completed(item: Any, item_path: Path) -> Any:
+                            try:
+                                return await item
+                            except Exception as raw_error:
+                                error = located_error(
+                                    raw_error, field_nodes, item_path.as_list()
+                                )
+                                self.handle_field_error(error, item_type)
+                                return None
+
+                        completed_item = await_completed(completed_item, item_path)
+                except Exception as raw_error:
+                    error = located_error(raw_error, field_nodes, item_path.as_list())
+                    self.handle_field_error(error, item_type)
+                    completed_item = None
 
             if is_awaitable(completed_item):
                 append_awaitable(index)
@@ -838,7 +835,7 @@ class ExecutionContext:
             return completed_results
 
         # noinspection PyShadowingNames
-        async def get_completed_results() -> Any:
+        async def get_completed_results() -> List[Any]:
             for index, result in zip(
                 awaitable_indices,
                 await gather(
@@ -916,29 +913,55 @@ class ExecutionContext:
 
     def ensure_valid_runtime_type(
         self,
-        runtime_type_or_name: Optional[Union[GraphQLObjectType, str]],
+        runtime_type_or_name: Any,
         return_type: GraphQLAbstractType,
         field_nodes: List[FieldNode],
         info: GraphQLResolveInfo,
         result: Any,
     ) -> GraphQLObjectType:
-        runtime_type = (
-            self.schema.get_type(runtime_type_or_name)
-            if isinstance(runtime_type_or_name, str)
-            else runtime_type_or_name
-        )
-
-        if not is_object_type(runtime_type):
+        if runtime_type_or_name is None:
             raise GraphQLError(
                 f"Abstract type '{return_type.name}' must resolve"
                 " to an Object type at runtime"
-                f" for field '{info.parent_type.name}.{info.field_name}'"
-                f" with value {inspect(result)}, received '{inspect(runtime_type)}'."
+                f" for field '{info.parent_type.name}.{info.field_name}'."
                 f" Either the '{return_type.name}' type should provide"
-                " a 'resolve_type' function or each possible type should"
-                " provide an 'is_type_of' function.",
+                " a 'resolve_type' function or each possible type should provide"
+                " an 'is_type_of' function.",
                 field_nodes,
             )
+
+        # temporary workaround until support for passing object types will be removed
+        runtime_type_name = (
+            runtime_type_or_name.name
+            if is_named_type(runtime_type_or_name)
+            else runtime_type_or_name
+        )
+
+        if not isinstance(runtime_type_name, str):
+            raise GraphQLError(
+                f"Abstract type '{return_type.name}' must resolve"
+                " to an Object type at runtime"
+                f" for field '{info.parent_type.name}.{info.field_name}' with value"
+                f" {inspect(result)}, received '{inspect(runtime_type_name)}'.",
+                field_nodes,
+            )
+
+        runtime_type = self.schema.get_type(runtime_type_name)
+
+        if runtime_type is None:
+            raise GraphQLError(
+                f"Abstract type '{return_type.name}' was resolved to a type"
+                f" '{runtime_type_name}' that does not exist inside the schema.",
+                field_nodes,
+            )
+
+        if not is_object_type(runtime_type):
+            raise GraphQLError(
+                f"Abstract type '{return_type.name}' was resolved"
+                f" to a non-object type '{runtime_type_name}'.",
+                field_nodes,
+            )
+
         runtime_type = cast(GraphQLObjectType, runtime_type)
 
         if not self.schema.is_sub_type(return_type, runtime_type):
@@ -1264,7 +1287,7 @@ def default_type_resolver(
                 append_awaitable_results(cast(Awaitable, is_type_of_result))
                 append_awaitable_types(type_)
             elif is_type_of_result:
-                return type_
+                return type_.name
 
     if awaitable_is_type_of_results:
         # noinspection PyShadowingNames
@@ -1272,7 +1295,7 @@ def default_type_resolver(
             is_type_of_results = await gather(*awaitable_is_type_of_results)
             for is_type_of_result, type_ in zip(is_type_of_results, awaitable_types):
                 if is_type_of_result:
-                    return type_
+                    return type_.name
             return None
 
         return get_type()

@@ -9,6 +9,8 @@ from .block_string import print_block_string
 __all__ = ["print_ast"]
 
 
+MAX_LINE_LENGTH = 80
+
 Strings = Collection[str]
 
 
@@ -100,16 +102,13 @@ class PrintAstVisitor(Visitor):
 
     @staticmethod
     def leave_field(node: PrintedNode, *_args: Any) -> str:
-        return join(
-            (
-                wrap("", node.alias, ": ")
-                + node.name
-                + wrap("(", join(node.arguments, ", "), ")"),
-                join(node.directives, " "),
-                node.selection_set,
-            ),
-            " ",
-        )
+        prefix = wrap("", node.alias, ": ") + node.name
+        args_line = prefix + wrap("(", join(node.arguments, ", "), ")")
+
+        if len(args_line) > MAX_LINE_LENGTH:
+            args_line = prefix + wrap("(\n", indent(join(node.arguments, "\n")), "\n)")
+
+        return join((args_line, join(node.directives, " "), node.selection_set), " ")
 
     @staticmethod
     def leave_argument(node: PrintedNode, *_args: Any) -> str:
@@ -393,16 +392,16 @@ def join(strings: Optional[Strings], separator: str = "") -> str:
     return separator.join(s for s in strings if s) if strings else ""
 
 
-def block(strings: Strings) -> str:
+def block(strings: Optional[Strings]) -> str:
     """Return strings inside a block.
 
     Given a collection of strings, return a string with each item on its own line,
     wrapped in an indented "{ }" block.
     """
-    return "{\n" + indent(join(strings, "\n")) + "\n}" if strings else ""
+    return wrap("{\n", indent(join(strings, "\n")), "\n}")
 
 
-def wrap(start: str, string: str, end: str = "") -> str:
+def wrap(start: str, string: Optional[str], end: str = "") -> str:
     """Wrap string inside other strings at start and end.
 
     If the string is not None or empty, then wrap with start and end, otherwise return
@@ -417,7 +416,7 @@ def indent(string: str) -> str:
     If the string is not None or empty, add two spaces at the beginning of every line
     inside the string.
     """
-    return "  " + string.replace("\n", "\n  ") if string else string
+    return wrap("  ", string.replace("\n", "\n  "))
 
 
 def is_multiline(string: str) -> bool:
@@ -425,6 +424,6 @@ def is_multiline(string: str) -> bool:
     return "\n" in string
 
 
-def has_multiline_items(maybe_list: Optional[Strings]) -> bool:
+def has_multiline_items(strings: Optional[Strings]) -> bool:
     """Check whether one of the items in the list has multiple lines."""
-    return any(is_multiline(item) for item in maybe_list) if maybe_list else False
+    return any(is_multiline(item) for item in strings) if strings else False

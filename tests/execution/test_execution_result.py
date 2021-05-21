@@ -1,4 +1,4 @@
-from pytest import raises  # type: ignore
+from pytest import raises
 
 from graphql.error import GraphQLError
 from graphql.execution import ExecutionResult
@@ -33,12 +33,26 @@ def describe_execution_result():
         )
 
     def formats_properly():
+        res = ExecutionResult(data, None)
+        assert res.formatted == {
+            "data": data,
+            "errors": None,
+        }
         res = ExecutionResult(data, errors)
-        assert res.formatted == {"data": data, "errors": errors}
+        assert res.formatted == {
+            "data": data,
+            "errors": [{"message": "Some error", "locations": None, "path": None}],
+        }
+        res = ExecutionResult(data, None, extensions)
+        assert res.formatted == {
+            "data": data,
+            "errors": None,
+            "extensions": extensions,
+        }
         res = ExecutionResult(data, errors, extensions)
         assert res.formatted == {
             "data": data,
-            "errors": errors,
+            "errors": [{"message": "Some error", "locations": None, "path": None}],
             "extensions": extensions,
         }
 

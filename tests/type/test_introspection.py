@@ -1,25 +1,21 @@
 from graphql import graphql_sync
-from graphql.type import (
-    GraphQLArgument,
-    GraphQLEnumType,
-    GraphQLEnumValue,
-    GraphQLField,
-    GraphQLInputField,
-    GraphQLInputObjectType,
-    GraphQLList,
-    GraphQLObjectType,
-    GraphQLSchema,
-    GraphQLString,
-)
-from graphql.utilities import get_introspection_query
+from graphql.utilities import get_introspection_query, build_schema
 
 
 def describe_introspection():
     def executes_an_introspection_query():
-        schema = GraphQLSchema(
-            GraphQLObjectType("QueryRoot", {"onlyField": GraphQLField(GraphQLString)}),
-            description="Sample schema",
+        schema = build_schema(
+            """
+            type SomeObject {
+              someField: String
+            }
+
+            schema {
+              query: SomeObject
+            }
+            """
         )
+
         source = get_introspection_query(
             descriptions=False, specified_by_url=True, directive_is_repeatable=True
         )
@@ -28,17 +24,17 @@ def describe_introspection():
         assert result.errors is None
         assert result.data == {
             "__schema": {
+                "queryType": {"name": "SomeObject"},
                 "mutationType": None,
                 "subscriptionType": None,
-                "queryType": {"name": "QueryRoot"},
                 "types": [
                     {
                         "kind": "OBJECT",
-                        "name": "QueryRoot",
+                        "name": "SomeObject",
                         "specifiedByUrl": None,
                         "fields": [
                             {
-                                "name": "onlyField",
+                                "name": "someField",
                                 "args": [],
                                 "type": {
                                     "kind": "SCALAR",
@@ -330,7 +326,17 @@ def describe_introspection():
                             },
                             {
                                 "name": "inputFields",
-                                "args": [],
+                                "args": [
+                                    {
+                                        "name": "includeDeprecated",
+                                        "type": {
+                                            "kind": "SCALAR",
+                                            "name": "Boolean",
+                                            "ofType": None,
+                                        },
+                                        "defaultValue": "false",
+                                    }
+                                ],
                                 "type": {
                                     "kind": "LIST",
                                     "name": None,
@@ -448,7 +454,17 @@ def describe_introspection():
                             },
                             {
                                 "name": "args",
-                                "args": [],
+                                "args": [
+                                    {
+                                        "name": "includeDeprecated",
+                                        "type": {
+                                            "kind": "SCALAR",
+                                            "name": "Boolean",
+                                            "ofType": None,
+                                        },
+                                        "defaultValue": "false",
+                                    }
+                                ],
                                 "type": {
                                     "kind": "NON_NULL",
                                     "name": None,
@@ -564,6 +580,32 @@ def describe_introspection():
                             },
                             {
                                 "name": "defaultValue",
+                                "args": [],
+                                "type": {
+                                    "kind": "SCALAR",
+                                    "name": "String",
+                                    "ofType": None,
+                                },
+                                "isDeprecated": False,
+                                "deprecationReason": None,
+                            },
+                            {
+                                "name": "isDeprecated",
+                                "args": [],
+                                "type": {
+                                    "kind": "NON_NULL",
+                                    "name": None,
+                                    "ofType": {
+                                        "kind": "SCALAR",
+                                        "name": "Boolean",
+                                        "ofType": None,
+                                    },
+                                },
+                                "isDeprecated": False,
+                                "deprecationReason": None,
+                            },
+                            {
+                                "name": "deprecationReason",
                                 "args": [],
                                 "type": {
                                     "kind": "SCALAR",
@@ -891,7 +933,12 @@ def describe_introspection():
                     {
                         "name": "deprecated",
                         "isRepeatable": False,
-                        "locations": ["FIELD_DEFINITION", "ENUM_VALUE"],
+                        "locations": [
+                            "FIELD_DEFINITION",
+                            "ARGUMENT_DEFINITION",
+                            "INPUT_FIELD_DEFINITION",
+                            "ENUM_VALUE",
+                        ],
                         "args": [
                             {
                                 "defaultValue": '"No longer supported"',
@@ -929,28 +976,23 @@ def describe_introspection():
         }
 
     def introspects_on_input_object():
-        TestInputObject = GraphQLInputObjectType(
-            "TestInputObject",
-            {
-                "a": GraphQLInputField(GraphQLString, default_value="tes\t de\fault"),
-                "b": GraphQLInputField(GraphQLList(GraphQLString)),
-                "c": GraphQLInputField(GraphQLString, default_value=None),
-            },
+        schema = build_schema(
+            """
+            input SomeInputObject {
+              a: String = "tes\\t de\\fault"
+              b: [String]
+              c: String = null
+            }
+
+            type Query {
+              someField(someArg: SomeInputObject): String
+            }
+            """
         )
 
-        TestType = GraphQLObjectType(
-            "TestType",
-            {
-                "field": GraphQLField(
-                    GraphQLString, args={"complex": GraphQLArgument(TestInputObject)}
-                )
-            },
-        )
-
-        schema = GraphQLSchema(TestType)
         source = """
             {
-              __type(name: "TestInputObject") {
+              __type(name: "SomeInputObject") {
                 kind
                 name
                 inputFields {
@@ -983,7 +1025,7 @@ def describe_introspection():
             {
                 "__type": {
                     "kind": "INPUT_OBJECT",
-                    "name": "TestInputObject",
+                    "name": "SomeInputObject",
                     "inputFields": [
                         {
                             "name": "a",
@@ -1023,43 +1065,41 @@ def describe_introspection():
         )
 
     def supports_the_type_root_field():
-        TestType = GraphQLObjectType(
-            "TestType", {"testField": GraphQLField(GraphQLString)}
+        schema = build_schema(
+            """
+            type Query {
+              someField: String
+            }
+            """
         )
 
-        schema = GraphQLSchema(TestType)
         source = """
             {
-              __type(name: "TestType") {
+              __type(name: "Query") {
                 name
               }
             }
             """
 
         assert graphql_sync(schema=schema, source=source) == (
-            {"__type": {"name": "TestType"}},
+            {"__type": {"name": "Query"}},
             None,
         )
 
     def identifies_deprecated_fields():
-        TestType = GraphQLObjectType(
-            "TestType",
-            {
-                "nonDeprecated": GraphQLField(GraphQLString),
-                "deprecated": GraphQLField(
-                    GraphQLString, deprecation_reason="Removed in 1.0"
-                ),
-                "deprecatedWithEmptyReason": GraphQLField(
-                    GraphQLString, deprecation_reason=""
-                ),
-            },
+        schema = build_schema(
+            """
+            type Query {
+              nonDeprecated: String
+              deprecated: String @deprecated(reason: "Removed in 1.0")
+              deprecatedWithEmptyReason: String @deprecated(reason: "")
+            }
+            """
         )
 
-        schema = GraphQLSchema(TestType)
         source = """
             {
-              __type(name: "TestType") {
-                name
+              __type(name: "Query") {
                 fields(includeDeprecated: true) {
                   name
                   isDeprecated,
@@ -1072,7 +1112,6 @@ def describe_introspection():
         assert graphql_sync(schema=schema, source=source) == (
             {
                 "__type": {
-                    "name": "TestType",
                     "fields": [
                         {
                             "name": "nonDeprecated",
@@ -1096,21 +1135,18 @@ def describe_introspection():
         )
 
     def respects_the_include_deprecated_parameter_for_fields():
-        TestType = GraphQLObjectType(
-            "TestType",
-            {
-                "nonDeprecated": GraphQLField(GraphQLString),
-                "deprecated": GraphQLField(
-                    GraphQLString, deprecation_reason="Removed in 1.0"
-                ),
-            },
+        schema = build_schema(
+            """
+            type Query {
+              nonDeprecated: String
+              deprecated: String @deprecated(reason: "Removed in 1.0")
+            }
+            """
         )
 
-        schema = GraphQLSchema(TestType)
         source = """
             {
-              __type(name: "TestType") {
-                name
+              __type(name: "Query") {
                 trueFields: fields(includeDeprecated: true) {
                   name
                 }
@@ -1127,7 +1163,6 @@ def describe_introspection():
         assert graphql_sync(schema=schema, source=source) == (
             {
                 "__type": {
-                    "name": "TestType",
                     "trueFields": [{"name": "nonDeprecated"}, {"name": "deprecated"}],
                     "falseFields": [{"name": "nonDeprecated"}],
                     "omittedFields": [{"name": "nonDeprecated"}],
@@ -1136,23 +1171,128 @@ def describe_introspection():
             None,
         )
 
-    def identifies_deprecated_enum_values():
-        TestEnum = GraphQLEnumType(
-            "TestEnum",
-            {
-                "NON_DEPRECATED": GraphQLEnumValue(0),
-                "DEPRECATED": GraphQLEnumValue(1, deprecation_reason="Removed in 1.0"),
-                "ALSO_NON_DEPRECATED": GraphQLEnumValue(2),
-            },
+    def identifies_deprecated_args():
+        schema = build_schema(
+            """
+            type Query {
+              someField(
+                nonDeprecated: String
+                deprecated: String @deprecated(reason: "Removed in 1.0")
+                deprecatedWithEmptyReason: String @deprecated(reason: "")
+              ): String
+            }
+            """
         )
 
-        TestType = GraphQLObjectType("TestType", {"testEnum": GraphQLField(TestEnum)})
-
-        schema = GraphQLSchema(TestType)
         source = """
             {
-              __type(name: "TestEnum") {
-                name
+              __type(name: "Query") {
+                fields {
+                  args(includeDeprecated: true) {
+                    name
+                    isDeprecated,
+                    deprecationReason
+                  }
+                }
+              }
+            }
+            """
+
+        assert graphql_sync(schema=schema, source=source) == (
+            {
+                "__type": {
+                    "fields": [
+                        {
+                            "args": [
+                                {
+                                    "name": "nonDeprecated",
+                                    "isDeprecated": False,
+                                    "deprecationReason": None,
+                                },
+                                {
+                                    "name": "deprecated",
+                                    "isDeprecated": True,
+                                    "deprecationReason": "Removed in 1.0",
+                                },
+                                {
+                                    "name": "deprecatedWithEmptyReason",
+                                    "isDeprecated": True,
+                                    "deprecationReason": "",
+                                },
+                            ],
+                        },
+                    ],
+                }
+            },
+            None,
+        )
+
+    def respects_the_include_deprecated_parameter_for_args():
+        schema = build_schema(
+            """
+            type Query {
+              someField(
+                nonDeprecated: String
+                deprecated: String @deprecated(reason: "Removed in 1.0")
+              ): String
+            }
+            """
+        )
+
+        source = """
+            {
+              __type(name: "Query") {
+                fields {
+                  trueArgs: args(includeDeprecated: true) {
+                    name
+                  }
+                  falseArgs: args(includeDeprecated: false) {
+                    name
+                  }
+                  omittedArgs: args {
+                    name
+                  }
+                }
+              }
+            }
+            """
+
+        assert graphql_sync(schema=schema, source=source) == (
+            {
+                "__type": {
+                    "fields": [
+                        {
+                            "trueArgs": [
+                                {"name": "nonDeprecated"},
+                                {"name": "deprecated"},
+                            ],
+                            "falseArgs": [{"name": "nonDeprecated"}],
+                            "omittedArgs": [{"name": "nonDeprecated"}],
+                        },
+                    ],
+                },
+            },
+            None,
+        )
+
+    def identifies_deprecated_enum_values():
+        schema = build_schema(
+            """
+            enum SomeEnum {
+              NON_DEPRECATED
+              DEPRECATED @deprecated(reason: "Removed in 1.0")
+              ALSO_NON_DEPRECATED
+            }
+
+            type Query {
+              someField(someArg: SomeEnum): String
+            }
+            """
+        )
+
+        source = """
+            {
+              __type(name: "SomeEnum") {
                 enumValues(includeDeprecated: true) {
                   name
                   isDeprecated,
@@ -1165,7 +1305,6 @@ def describe_introspection():
         assert graphql_sync(schema=schema, source=source) == (
             {
                 "__type": {
-                    "name": "TestEnum",
                     "enumValues": [
                         {
                             "name": "NON_DEPRECATED",
@@ -1189,24 +1328,24 @@ def describe_introspection():
         )
 
     def respects_the_include_deprecated_parameter_for_enum_values():
-        TestEnum = GraphQLEnumType(
-            "TestEnum",
-            {
-                "NON_DEPRECATED": GraphQLEnumValue(0),
-                "DEPRECATED": GraphQLEnumValue(1, deprecation_reason="Removed in 1.0"),
-                "DEPRECATED_WITH_EMPTY_REASON": GraphQLEnumValue(
-                    2, deprecation_reason=""
-                ),
-                "ALSO_NON_DEPRECATED": GraphQLEnumValue(3),
-            },
+        schema = build_schema(
+            """
+          enum SomeEnum {
+            NON_DEPRECATED
+            DEPRECATED @deprecated(reason: "Removed in 1.0")
+            DEPRECATED_WITH_EMPTY_REASON @deprecated(reason: "")
+            ALSO_NON_DEPRECATED
+          }
+
+          type Query {
+            someField(someArg: SomeEnum): String
+          }
+            """
         )
 
-        TestType = GraphQLObjectType("TestType", {"testEnum": GraphQLField(TestEnum)})
-
-        schema = GraphQLSchema(TestType)
         source = """
             {
-              __type(name: "TestEnum") {
+              __type(name: "SomeEnum") {
                 trueValues: enumValues(includeDeprecated: true) {
                   name
                 }
@@ -1243,11 +1382,14 @@ def describe_introspection():
         )
 
     def fails_as_expected_on_the_type_root_field_without_an_arg():
-        TestType = GraphQLObjectType(
-            "TestType", {"testField": GraphQLField(GraphQLString)}
+        schema = build_schema(
+            """
+            type Query {
+              someField: String
+            }
+            """
         )
 
-        schema = GraphQLSchema(TestType)
         source = """
             {
               __type {
@@ -1266,79 +1408,42 @@ def describe_introspection():
             ],
         )
 
-    def exposes_descriptions_on_types_and_fields():
-        QueryRoot = GraphQLObjectType(
-            "QueryRoot", {"onlyField": GraphQLField(GraphQLString)}
+    def exposes_descriptions():
+        schema = build_schema(
+            '''
+            """Enum description"""
+            enum SomeEnum {
+              """Value description"""
+              VALUE
+            }
+
+            """Object description"""
+            type SomeObject {
+              """Field description"""
+              someField(arg: SomeEnum): String
+            }
+
+            """Schema description"""
+            schema {
+              query: SomeObject
+            }
+            '''
         )
 
-        schema = GraphQLSchema(QueryRoot)
         source = """
             {
-              schemaType: __type(name: "__Schema") {
-                name,
+              Schema: __schema { description }
+              SomeObject: __type(name: "SomeObject") {
                 description,
                 fields {
-                  name,
+                  name
                   description
                 }
               }
-            }
-            """
-
-        assert graphql_sync(schema=schema, source=source) == (
-            {
-                "schemaType": {
-                    "name": "__Schema",
-                    "description": "A GraphQL Schema defines the capabilities of a"
-                    " GraphQL server. It exposes all available types and"
-                    " directives on the server, as well as the entry points"
-                    " for query, mutation, and subscription operations.",
-                    "fields": [
-                        {"name": "description", "description": None},
-                        {
-                            "name": "types",
-                            "description": "A list of all types supported"
-                            " by this server.",
-                        },
-                        {
-                            "name": "queryType",
-                            "description": "The type that query operations"
-                            " will be rooted at.",
-                        },
-                        {
-                            "name": "mutationType",
-                            "description": "If this server supports mutation, the type"
-                            " that mutation operations will be rooted at.",
-                        },
-                        {
-                            "name": "subscriptionType",
-                            "description": "If this server support subscription,"
-                            " the type that subscription operations will be rooted at.",
-                        },
-                        {
-                            "name": "directives",
-                            "description": "A list of all directives supported"
-                            " by this server.",
-                        },
-                    ],
-                }
-            },
-            None,
-        )
-
-    def exposes_descriptions_on_enums():
-        QueryRoot = GraphQLObjectType(
-            "QueryRoot", {"onlyField": GraphQLField(GraphQLString)}
-        )
-
-        schema = GraphQLSchema(QueryRoot)
-        source = """
-            {
-              typeKindType: __type(name: "__TypeKind") {
-                name,
-                description,
+              SomeEnum: __type(name: "SomeEnum") {
+                description
                 enumValues {
-                  name,
+                  name
                   description
                 }
               }
@@ -1347,66 +1452,53 @@ def describe_introspection():
 
         assert graphql_sync(schema=schema, source=source) == (
             {
-                "typeKindType": {
-                    "name": "__TypeKind",
-                    "description": "An enum describing what kind of type"
-                    " a given `__Type` is.",
+                "Schema": {
+                    "description": "Schema description",
+                },
+                "SomeEnum": {
+                    "description": "Enum description",
                     "enumValues": [
                         {
-                            "description": "Indicates this type is a scalar.",
-                            "name": "SCALAR",
-                        },
-                        {
-                            "description": "Indicates this type is an object."
-                            + " `fields` and `interfaces` are valid fields.",
-                            "name": "OBJECT",
-                        },
-                        {
-                            "description": "Indicates this type is an interface."
-                            " `fields`, `interfaces`, and `possibleTypes`"
-                            " are valid fields.",
-                            "name": "INTERFACE",
-                        },
-                        {
-                            "description": "Indicates this type is a union."
-                            " `possibleTypes` is a valid field.",
-                            "name": "UNION",
-                        },
-                        {
-                            "description": "Indicates this type is an enum."
-                            " `enumValues` is a valid field.",
-                            "name": "ENUM",
-                        },
-                        {
-                            "description": "Indicates this type is an input object."
-                            " `inputFields` is a valid field.",
-                            "name": "INPUT_OBJECT",
-                        },
-                        {
-                            "description": "Indicates this type is a list."
-                            " `ofType` is a valid field.",
-                            "name": "LIST",
-                        },
-                        {
-                            "description": "Indicates this type is a non-null."
-                            " `ofType` is a valid field.",
-                            "name": "NON_NULL",
+                            "name": "VALUE",
+                            "description": "Value description",
                         },
                     ],
-                }
+                },
+                "SomeObject": {
+                    "description": "Object description",
+                    "fields": [
+                        {
+                            "name": "someField",
+                            "description": "Field description",
+                        },
+                    ],
+                },
             },
             None,
         )
 
-    def executes_introspection_query_without_calling_global_field_resolver():
-        query_root = GraphQLObjectType(
-            "QueryRoot", {"onlyField": GraphQLField(GraphQLString)}
+    def executes_introspection_query_without_calling_global_resolvers():
+        schema = build_schema(
+            """
+            type Query {
+              someField: String
+            }
+            """
         )
 
-        schema = GraphQLSchema(query_root)
-        source = get_introspection_query(directive_is_repeatable=True)
+        source = get_introspection_query(
+            specified_by_url=True, directive_is_repeatable=True, schema_description=True
+        )
 
         def field_resolver(_obj, info):
             assert False, f"Called on {info.parent_type.name}.{info.field_name}"
 
-        graphql_sync(schema=schema, source=source, field_resolver=field_resolver)
+        def type_resolver(_obj, info, _abstract_type):
+            assert False, f"Called on {info.parent_type.name}.{info.field_name}"
+
+        graphql_sync(
+            schema=schema,
+            source=source,
+            field_resolver=field_resolver,
+            type_resolver=type_resolver,
+        )

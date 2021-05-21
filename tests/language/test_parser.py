@@ -1,6 +1,6 @@
-from typing import cast
+from typing import cast, Optional, Tuple
 
-from pytest import raises  # type: ignore
+from pytest import raises
 
 from graphql.error import GraphQLSyntaxError
 from graphql.language import (
@@ -32,8 +32,10 @@ from graphql.pyutils import inspect
 from ..fixtures import kitchen_sink_query  # noqa: F401
 from ..utils import dedent
 
+Location = Optional[Tuple[int, int]]
 
-def assert_syntax_error(text, message, location):
+
+def assert_syntax_error(text: str, message: str, location: Location) -> None:
     with raises(GraphQLSyntaxError) as exc_info:
         parse(text)
     error = exc_info.value
@@ -43,24 +45,6 @@ def assert_syntax_error(text, message, location):
 
 
 def describe_parser():
-    def asserts_that_a_source_to_parse_was_provided():
-        with raises(TypeError) as exc_info:
-            # noinspection PyArgumentList
-            assert parse()  # type: ignore
-        msg = str(exc_info.value)
-        assert "missing" in msg
-        assert "source" in msg
-        with raises(TypeError) as exc_info:
-            # noinspection PyTypeChecker
-            assert parse(None)  # type: ignore
-        msg = str(exc_info.value)
-        assert "Must provide Source. Received: None." in msg
-        with raises(TypeError) as exc_info:
-            # noinspection PyTypeChecker
-            assert parse({})  # type: ignore
-        msg = str(exc_info.value)
-        assert "Must provide Source. Received: {}." in msg
-
     def parse_provides_useful_errors():
         with raises(GraphQLSyntaxError) as exc_info:
             parse("{")

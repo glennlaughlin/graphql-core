@@ -1,6 +1,6 @@
 from math import inf, nan
 
-from pytest import raises  # type: ignore
+from pytest import raises
 
 from graphql.error import GraphQLError
 from graphql.language import (
@@ -205,6 +205,21 @@ def describe_ast_from_value():
             ["HELLO", "GOODBYE"], GraphQLList(my_enum)
         ) == ListValueNode(
             values=[EnumValueNode(value="HELLO"), EnumValueNode(value="GOODBYE")]
+        )
+
+        def list_generator():
+            yield 1
+            yield 2
+            yield 3
+
+        assert ast_from_value(list_generator(), GraphQLList(GraphQLInt)) == (
+            ListValueNode(
+                values=[
+                    IntValueNode(value="1"),
+                    IntValueNode(value="2"),
+                    IntValueNode(value="3"),
+                ]
+            )
         )
 
     def converts_list_singletons():

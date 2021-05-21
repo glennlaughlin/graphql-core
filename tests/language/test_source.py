@@ -1,6 +1,8 @@
 import weakref
 
-from pytest import raises  # type: ignore
+from typing import cast, Tuple
+
+from pytest import raises
 
 from graphql.language import Source, SourceLocation
 
@@ -76,32 +78,18 @@ def describe_source():
         node.custom = "bar"  # type: ignore
         assert node.custom == "bar"  # type: ignore
 
-    def rejects_invalid_body_and_name():
-        with raises(TypeError, match="body must be a string\\."):
-            # noinspection PyTypeChecker
-            Source(None)  # type: ignore
-        with raises(TypeError, match="body must be a string\\."):
-            # noinspection PyTypeChecker
-            Source(1)  # type: ignore
-        with raises(TypeError, match="name must be a string\\."):
-            # noinspection PyTypeChecker
-            Source("", None)  # type: ignore
-        with raises(TypeError, match="name must be a string\\."):
-            # noinspection PyTypeChecker
-            Source("", 1)  # type: ignore
-
     def rejects_invalid_location_offset():
-        def create_source(location_offset):
-            return Source("", "", location_offset)
+        def create_source(location_offset: Tuple[int, int]) -> Source:
+            return Source("", "", cast(SourceLocation, location_offset))
 
         with raises(TypeError):
-            create_source(None)
+            create_source(None)  # type: ignore
         with raises(TypeError):
-            create_source(1)
+            create_source(1)  # type: ignore
         with raises(TypeError):
-            create_source((1,))
+            create_source((1,))  # type: ignore
         with raises(TypeError):
-            create_source((1, 2, 3))
+            create_source((1, 2, 3))  # type: ignore
 
         with raises(
             ValueError,

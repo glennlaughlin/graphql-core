@@ -57,10 +57,9 @@ from .ast import (
 from .directive_locations import DirectiveLocation
 from .ast import Token
 from .lexer import Lexer, is_punctuator_token_kind
-from .source import Source
+from .source import Source, is_source
 from .token_kind import TokenKind
 from ..error import GraphQLError, GraphQLSyntaxError
-from ..pyutils import inspect
 
 __all__ = ["parse", "parse_type", "parse_value"]
 
@@ -157,6 +156,16 @@ def parse_type(
 
 
 class Parser:
+    """GraphQL AST parser.
+
+    This class is exported only to assist people in implementing their own parsers
+    without duplicating too much code and should be used only as last resort for cases
+    such as experimental syntax or if certain features couldn't be contributed upstream.
+
+    It's still part of the internal API and is versioned, so any changes to it are never
+    considered breaking changes. If you still need to support multiple versions of the
+    library, please use the `__version_info__` variable for version detection.
+    """
 
     _lexer: Lexer
     _no_Location: bool
@@ -168,10 +177,10 @@ class Parser:
         no_location: bool = False,
         experimental_fragment_variables: bool = False,
     ):
-        if isinstance(source, str):
-            source = Source(source)
-        elif not isinstance(source, Source):
-            raise TypeError(f"Must provide Source. Received: {inspect(source)}.")
+        source = (
+            cast(Source, source) if is_source(source) else Source(cast(str, source))
+        )
+
         self._lexer = Lexer(source)
         self._no_location = no_location
         self._experimental_fragment_variables = experimental_fragment_variables
@@ -649,16 +658,10 @@ class Parser:
 
     def parse_implements_interfaces(self) -> List[NamedTypeNode]:
         """ImplementsInterfaces"""
-        types: List[NamedTypeNode] = []
-        if self.expect_optional_keyword("implements"):
-            # optional leading ampersand
-            self.expect_optional_token(TokenKind.AMP)
-            append = types.append
-            while True:
-                append(self.parse_named_type())
-                if not self.expect_optional_token(TokenKind.AMP):
-                    break
-        return types
+        if not self.expect_optional_keyword("implements"):
+            return []
+
+        return self.delimited_many(TokenKind.AMP, self.parse_named_type)
 
     def parse_fields_definition(self) -> List[FieldDefinitionNode]:
         """FieldsDefinition: {FieldDefinition+}"""
@@ -748,16 +751,11 @@ class Parser:
 
     def parse_union_member_types(self) -> List[NamedTypeNode]:
         """UnionMemberTypes"""
-        types: List[NamedTypeNode] = []
-        if self.expect_optional_token(TokenKind.EQUALS):
-            # optional leading pipe
-            self.expect_optional_token(TokenKind.PIPE)
-            append = types.append
-            while True:
-                append(self.parse_named_type())
-                if not self.expect_optional_token(TokenKind.PIPE):
-                    break
-        return types
+        return (
+            self.delimited_many(TokenKind.PIPE, self.parse_named_type)
+            if self.expect_optional_token(TokenKind.EQUALS)
+            else []
+        )
 
     def parse_enum_type_definition(self) -> EnumTypeDefinitionNode:
         """UnionTypeDefinition"""
@@ -946,15 +944,7 @@ class Parser:
 
     def parse_directive_locations(self) -> List[NameNode]:
         """DirectiveLocations"""
-        # optional leading pipe
-        self.expect_optional_token(TokenKind.PIPE)
-        locations: List[NameNode] = []
-        append = locations.append
-        while True:
-            append(self.parse_directive_location())
-            if not self.expect_optional_token(TokenKind.PIPE):
-                break
-        return locations
+        return self.delimited_many(TokenKind.PIPE, self.parse_directive_location)
 
     def parse_directive_location(self) -> NameNode:
         """DirectiveLocation"""
@@ -984,8 +974,8 @@ class Parser:
     def expect_token(self, kind: TokenKind) -> Token:
         """Expect the next token to be of the given kind.
 
-        If the next token is of the given kind, return that token after advancing
-        the lexer. Otherwise, do not change the parser state and throw an error.
+        If the next token is of the given kind, return that token after advancing the
+        lexer. Otherwise, do not change the parser state and throw an error.
         """
         token = self._lexer.token
         if token.kind == kind:
@@ -1001,8 +991,8 @@ class Parser:
     def expect_optional_token(self, kind: TokenKind) -> Optional[Token]:
         """Expect the next token optionally to be of the given kind.
 
-        If the next token is of the given kind, return that token after advancing
-        the lexer. Otherwise, do not change the parser state and return None.
+        If the next token is of the given kind, return that token after advancing the
+        lexer. Otherwise, do not change the parser state and return None.
         """
         token = self._lexer.token
         if token.kind == kind:
@@ -1060,7 +1050,8 @@ class Parser:
         self.expect_token(open_kind)
         nodes: List[T] = []
         append = nodes.append
-        while not self.expect_optional_token(close_kind):
+        expect_optional_token = partial(self.expect_optional_token, close_kind)
+        while not expect_optional_token():
             append(parse_fn())
         return nodes
 
@@ -1078,7 +1069,8 @@ class Parser:
         if self.expect_optional_token(open_kind):
             nodes = [parse_fn()]
             append = nodes.append
-            while not self.expect_optional_token(close_kind):
+            expect_optional_token = partial(self.expect_optional_token, close_kind)
+            while not expect_optional_token():
                 append(parse_fn())
             return nodes
         return []
@@ -1088,16 +1080,37 @@ class Parser:
     ) -> List[T]:
         """Fetch matching nodes, at least one.
 
-        Returns a non-empty list of parse nodes, determined by the ``parse_fn``.
-        This list begins with a lex token of ``open_kind`` and ends with a lex token of
+        Returns a non-empty list of parse nodes, determined by the ``parse_fn``. This
+        list begins with a lex token of ``open_kind`` and ends with a lex token of
         ``close_kind``. Advances the parser to the next lex token after the closing
         token.
         """
         self.expect_token(open_kind)
         nodes = [parse_fn()]
         append = nodes.append
-        while not self.expect_optional_token(close_kind):
+        expect_optional_token = partial(self.expect_optional_token, close_kind)
+        while not expect_optional_token():
             append(parse_fn())
+        return nodes
+
+    def delimited_many(
+        self, delimiter_kind: TokenKind, parse_fn: Callable[[], T]
+    ) -> List[T]:
+        """Fetch many delimited nodes.
+
+        Returns a non-empty list of parse nodes, determined by the ``parse_fn``. This
+        list may begin with a lex token of ``delimiter_kind`` followed by items
+        separated by lex tokens of ``delimiter_kind``. Advances the parser to the next
+        lex token after the last item in the list.
+        """
+        expect_optional_token = partial(self.expect_optional_token, delimiter_kind)
+        expect_optional_token()
+        nodes: List[T] = []
+        append = nodes.append
+        while True:
+            append(parse_fn())
+            if not expect_optional_token():
+                break
         return nodes
 
 

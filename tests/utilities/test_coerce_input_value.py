@@ -1,7 +1,7 @@
 from math import nan
 from typing import Any, List, NamedTuple, Union
 
-from pytest import raises  # type: ignore
+from pytest import raises
 
 from graphql.error import GraphQLError
 from graphql.pyutils import Undefined
@@ -10,6 +10,7 @@ from graphql.type import (
     GraphQLFloat,
     GraphQLInputField,
     GraphQLInputObjectType,
+    GraphQLInputType,
     GraphQLInt,
     GraphQLList,
     GraphQLNonNull,
@@ -39,7 +40,7 @@ def expect_errors(result: CoercedValue) -> List[CoercedValueError]:
 
 
 def describe_coerce_input_value():
-    def _coerce_value(input_value, type_):
+    def _coerce_value(input_value: Any, type_: GraphQLInputType):
         errors: List[CoercedValueError] = []
         append = errors.append
 
@@ -282,6 +283,15 @@ def describe_coerce_input_value():
 
         def returns_no_error_for_a_valid_input():
             result = _coerce_value([1, 2, 3], TestList)
+            assert expect_value(result) == [1, 2, 3]
+
+        def returns_no_error_for_a_valid_iterable_input():
+            def list_generator():
+                yield 1
+                yield 2
+                yield 3
+
+            result = _coerce_value(list_generator(), TestList)
             assert expect_value(result) == [1, 2, 3]
 
         def returns_an_error_for_an_invalid_input():

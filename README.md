@@ -12,7 +12,7 @@ a query language for APIs created by Facebook.
 [![Python 3 Status](https://pyup.io/repos/github/graphql-python/graphql-core/python-3-shield.svg)](https://pyup.io/repos/github/graphql-python/graphql-core/)
 [![Code Style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/ambv/black)
 
-The current version 3.1.3 of GraphQL-core is up-to-date with GraphQL.js version 15.2.0.
+The current version 3.1.5 of GraphQL-core is up-to-date with GraphQL.js version 15.4.0.
 
 An extensive test suite with over 2200 unit tests and 100% coverage comprises a
 replication of the complete test suite of GraphQL.js, making sure this port is
@@ -34,7 +34,7 @@ examples.
 
 ## Getting started
 
-An overview of GraphQL in general is available in the
+A general overview of GraphQL is available in the
 [README](https://github.com/graphql/graphql-spec/blob/main/README.md) for the
 [Specification for GraphQL](https://github.com/graphql/graphql-spec). That overview
 describes a simple set of GraphQL examples that exist as [tests](tests) in this
@@ -46,20 +46,20 @@ README and the corresponding tests in parallel.
 
 GraphQL-core 3 can be installed from PyPI using the built-in pip command:
 
-    python -m pip install "graphql-core>=3"
+    python -m pip install graphql-core
 
-Alternatively, you can also use [pipenv](https://docs.pipenv.org/) for installation in a
+You can also use [pipenv](https://docs.pipenv.org/) for installation in a
 virtual environment:
 
-    pipenv install "graphql-core>=3"
+    pipenv install graphql-core
 
 
 ## Usage
 
-GraphQL-core provides two important capabilities: building a type schema, and
+GraphQL-core provides two important capabilities: building a type schema and
 serving queries against that type schema.
 
-First, build a GraphQL type schema which maps to your code base:
+First, build a GraphQL type schema which maps to your codebase:
 
 ```python
 from graphql import (
@@ -75,7 +75,7 @@ schema = GraphQLSchema(
         }))
 ```
 
-This defines a simple schema with one type and one field, that resolves to a fixed
+This defines a simple schema, with one type and one field, that resolves to a fixed
 value. The `resolve` function can return a value, a co-routine object or a list of
 these. It takes two positional arguments; the first one provides the root or the
 resolved parent field, the second one provides a `GraphQLResolveInfo` object which
@@ -89,7 +89,7 @@ where the context is passed separately and arguments are passed as a single obje
 Also note that GraphQL fields must be passed as a `GraphQLField` object explicitly.
 Similarly, GraphQL arguments must be passed as `GraphQLArgument` objects.
 
-A more complex example is included in the top level [tests](tests) directory.
+A more complex example is included in the top-level [tests](tests) directory.
 
 Then, serve the result of a query against that type schema.
 

@@ -1,13 +1,14 @@
 from collections import namedtuple
 from typing import Union
 
-from pytest import raises  # type: ignore
+from pytest import raises
 
 from graphql import graphql_sync
 from graphql.language import parse, print_ast, DocumentNode, InterfaceTypeDefinitionNode
 from graphql.type import (
     GraphQLDeprecatedDirective,
     GraphQLIncludeDirective,
+    GraphQLSchema,
     GraphQLSkipDirective,
     GraphQLSpecifiedByDirective,
     GraphQLBoolean,
@@ -114,6 +115,13 @@ def describe_schema_builder():
             """
         build_schema(sdl)
 
+    def match_order_of_default_types_and_directives():
+        schema = GraphQLSchema()
+        sdl_schema = build_ast_schema(DocumentNode(definitions=[]))
+
+        assert sdl_schema.directives == schema.directives
+        assert sdl_schema.type_map == schema.type_map
+
     def empty_type():
         sdl = dedent(
             """
@@ -177,6 +185,24 @@ def describe_schema_builder():
               """It has an argument"""
               arg: Int
             ) on FIELD
+
+            """Who knows what's inside this scalar?"""
+            scalar MysteryScalar
+
+            """This is an input object type"""
+            input FooInput {
+              """It has a field"""
+              field: Int
+            }
+
+            """This is an interface type"""
+            interface Energy {
+              """It also has a field"""
+              str: String
+            }
+
+            """There is nothing inside!"""
+            union BlackHole
 
             """With an enum"""
             enum Color {
@@ -472,226 +498,6 @@ def describe_schema_builder():
             " as a collection of GraphQLObjectType instances."
         )
 
-    def describe_specifying_union_type_using_typename():
-
-        schema = build_schema(
-            """
-            type Query {
-              fruits: [Fruit]
-            }
-
-            union Fruit = Apple | Banana
-
-            type Apple {
-              color: String
-            }
-
-            type Banana {
-              length: Int
-            }
-            """
-        )
-
-        source = """
-            {
-              fruits {
-                ... on Apple {
-                  color
-                }
-                ... on Banana {
-                  length
-                }
-              }
-            }
-            """
-
-        expected = ({"fruits": [{"color": "green"}, {"length": 5}]}, None)
-
-        def using_dicts():
-            root_value = {
-                "fruits": [
-                    {"color": "green", "__typename": "Apple"},
-                    {"length": 5, "__typename": "Banana"},
-                ]
-            }
-
-            assert (
-                graphql_sync(schema=schema, source=source, root_value=root_value)
-                == expected
-            )
-
-        def using_objects():
-            class Apple:
-                __typename = "Apple"
-                color = "green"
-
-            class Banana:
-                __typename = "Banana"
-                length = 5
-
-            class RootValue:
-                fruits = [Apple(), Banana()]
-
-            assert (
-                graphql_sync(schema=schema, source=source, root_value=RootValue())
-                == expected
-            )
-
-        def using_inheritance():
-            class Fruit:
-                __typename = "Fruit"
-
-            class Apple(Fruit):
-                __typename = "Apple"
-
-            class Delicious(Apple):
-                color = "golden or red"
-
-            class GoldenDelicious(Delicious):
-                color = "golden"
-
-            class RedDelicious(Delicious):
-                color = "red"
-
-            class GrannySmith(Apple):
-                color = "green"
-
-            class Banana(Fruit):
-                __typename = "Banana"
-                length = 5
-
-            class RootValue:
-                fruits = [GrannySmith(), RedDelicious(), GoldenDelicious(), Banana()]
-
-            assert graphql_sync(
-                schema=schema, source=source, root_value=RootValue()
-            ) == (
-                {
-                    "fruits": [
-                        {"color": "green"},
-                        {"color": "red"},
-                        {"color": "golden"},
-                        {"length": 5},
-                    ]
-                },
-                None,
-            )
-
-    def describe_specifying_interface_type_using_typename():
-        schema = build_schema(
-            """
-            type Query {
-              characters: [Character]
-            }
-
-            interface Character {
-              name: String!
-            }
-
-            type Human implements Character {
-              name: String!
-              totalCredits: Int
-            }
-
-            type Droid implements Character {
-              name: String!
-              primaryFunction: String
-            }
-            """
-        )
-
-        source = """
-            {
-              characters {
-                name
-                ... on Human {
-                  totalCredits
-                }
-                ... on Droid {
-                  primaryFunction
-                }
-              }
-            }
-            """
-
-        expected = (
-            {
-                "characters": [
-                    {"name": "Han Solo", "totalCredits": 10},
-                    {"name": "R2-D2", "primaryFunction": "Astromech"},
-                ]
-            },
-            None,
-        )
-
-        def using_dicts():
-            root_value = {
-                "characters": [
-                    {"name": "Han Solo", "totalCredits": 10, "__typename": "Human"},
-                    {
-                        "name": "R2-D2",
-                        "primaryFunction": "Astromech",
-                        "__typename": "Droid",
-                    },
-                ]
-            }
-
-            assert (
-                graphql_sync(schema=schema, source=source, root_value=root_value)
-                == expected
-            )
-
-        def using_objects():
-            class Human:
-                __typename = "Human"
-                name = "Han Solo"
-                totalCredits = 10
-
-            class Droid:
-                __typename = "Droid"
-                name = "R2-D2"
-                primaryFunction = "Astromech"
-
-            class RootValue:
-                characters = [Human(), Droid()]
-
-            assert (
-                graphql_sync(schema=schema, source=source, root_value=RootValue())
-                == expected
-            )
-
-        def using_inheritance():
-            class Character:
-                __typename = "Character"
-
-            class Human(Character):
-                __typename = "Human"
-
-            class HanSolo(Human):
-                name = "Han Solo"
-                totalCredits = 10
-
-            class Droid(Character):
-                __typename = "Droid"
-
-            class RemoteControlled:
-                name = "R2"
-
-            class Mobile:
-                name = "D2"
-
-            class R2D2(RemoteControlled, Droid, Mobile):
-                name = "R2-D2"
-                primaryFunction = "Astromech"
-
-            class RootValue:
-                characters = [HanSolo(), R2D2()]
-
-            assert (
-                graphql_sync(schema=schema, source=source, root_value=RootValue())
-                == expected
-            )
-
     def custom_scalar():
         sdl = dedent(
             """
@@ -851,12 +657,21 @@ def describe_schema_builder():
               OTHER_VALUE @deprecated(reason: "Terrible reasons")
             }
 
+            input MyInput {
+              oldInput: String @deprecated
+              otherInput: String @deprecated(reason: "Use newInput")
+              newInput: String
+            }
+
             type Query {
               field1: String @deprecated
               field2: Int @deprecated(reason: "Because I said so")
               enum: MyEnum
+              field3(oldArg: String @deprecated, arg: String): String
+              field4(oldArg: String @deprecated(reason: "Why not?"), arg: String): String
+              field5(arg: MyInput): String
             }
-            """
+            """  # noqa: E501
         )
         assert cycle_sdl(sdl) == sdl
 
@@ -882,6 +697,23 @@ def describe_schema_builder():
         field2 = root_fields["field2"]
         assert field2.is_deprecated is True
         assert field2.deprecation_reason == "Because I said so"
+
+        input_fields = assert_input_object_type(schema.get_type("MyInput")).fields
+
+        new_input = input_fields["newInput"]
+        assert new_input.deprecation_reason is None
+
+        old_input = input_fields["oldInput"]
+        assert old_input.deprecation_reason == "No longer supported"
+
+        other_input = input_fields["otherInput"]
+        assert other_input.deprecation_reason == "Use newInput"
+
+        field3_old_arg = root_fields["field3"].args["oldArg"]
+        assert field3_old_arg.deprecation_reason == "No longer supported"
+
+        field4_old_arg = root_fields["field4"].args["oldArg"]
+        assert field4_old_arg.deprecation_reason == "Why not?"
 
     def supports_specified_by_directives():
         sdl = dedent(
