@@ -56,14 +56,14 @@ TypeWithAstNode = Union[
 TypeWithExtensionAstNodes = GraphQLNamedType
 
 
-def print_ast_node(obj: TypeWithAstNode) -> str:
+def expect_ast_node(obj: TypeWithAstNode, expected: str) -> None:
     assert obj is not None and obj.ast_node is not None
-    return print_ast(obj.ast_node)
+    assert print_ast(obj.ast_node) == expected
 
 
-def print_all_ast_nodes(obj: TypeWithExtensionAstNodes) -> str:
+def expect_extension_ast_nodes(obj: TypeWithExtensionAstNodes, expected: str) -> None:
     assert obj is not None and obj.extension_ast_nodes is not None
-    return print_ast(DocumentNode(definitions=[obj.ast_node, *obj.extension_ast_nodes]))
+    assert "\n\n".join(print_ast(node) for node in obj.extension_ast_nodes) == expected
 
 
 def describe_schema_builder():
@@ -340,7 +340,7 @@ def describe_schema_builder():
 
         definition = parse(sdl).definitions[0]
         assert isinstance(definition, InterfaceTypeDefinitionNode)
-        assert definition.interfaces == []
+        assert definition.interfaces == ()
 
         assert cycle_sdl(sdl) == sdl
 
@@ -680,22 +680,18 @@ def describe_schema_builder():
         my_enum = assert_enum_type(schema.get_type("MyEnum"))
 
         value = my_enum.values["VALUE"]
-        assert value.is_deprecated is False
+        assert value.deprecation_reason is None
 
         old_value = my_enum.values["OLD_VALUE"]
-        assert old_value.is_deprecated is True
         assert old_value.deprecation_reason == "No longer supported"
 
         other_value = my_enum.values["OTHER_VALUE"]
-        assert other_value.is_deprecated is True
         assert other_value.deprecation_reason == "Terrible reasons"
 
         root_fields = assert_object_type(schema.get_type("Query")).fields
         field1 = root_fields["field1"]
-        assert field1.is_deprecated is True
         assert field1.deprecation_reason == "No longer supported"
         field2 = root_fields["field2"]
-        assert field2.is_deprecated is True
         assert field2.deprecation_reason == "Because I said so"
 
         input_fields = assert_input_object_type(schema.get_type("MyInput")).fields
@@ -733,36 +729,38 @@ def describe_schema_builder():
         assert foo_scalar.specified_by_url == "https://example.com/foo_spec"
 
     def correctly_extend_scalar_type():
-        scalar_sdl = dedent(
+        schema = build_schema(
             """
             scalar SomeScalar
+            extend scalar SomeScalar @foo
+            extend scalar SomeScalar @bar
 
+            directive @foo on SCALAR
+            directive @bar on SCALAR
+            """
+        )
+
+        some_scalar = assert_scalar_type(schema.get_type("SomeScalar"))
+        assert print_type(some_scalar) == dedent(
+            """
+            scalar SomeScalar
+            """
+        )
+
+        expect_ast_node(some_scalar, "scalar SomeScalar")
+        expect_extension_ast_nodes(
+            some_scalar,
+            dedent(
+                """
             extend scalar SomeScalar @foo
 
             extend scalar SomeScalar @bar
             """
+            ),
         )
-        schema = build_schema(
-            scalar_sdl
-            + dedent(
-                """
-                directive @foo on SCALAR
-                directive @bar on SCALAR
-                """
-            )
-        )
-
-        some_scalar = assert_scalar_type(schema.get_type("SomeScalar"))
-        assert print_type(some_scalar) + "\n" == dedent(
-            """
-            scalar SomeScalar
-            """
-        )
-
-        assert print_all_ast_nodes(some_scalar) == scalar_sdl
 
     def correctly_extend_object_type():
-        object_sdl = dedent(
+        schema = build_schema(
             """
             type SomeObject implements Foo {
               first: String
@@ -775,21 +773,15 @@ def describe_schema_builder():
             extend type SomeObject implements Baz {
               third: Float
             }
+
+            interface Foo
+            interface Bar
+            interface Baz
             """
-        )
-        schema = build_schema(
-            object_sdl
-            + dedent(
-                """
-                interface Foo
-                interface Bar
-                interface Baz
-                """
-            )
         )
 
         some_object = assert_object_type(schema.get_type("SomeObject"))
-        assert print_type(some_object) + "\n" == dedent(
+        assert print_type(some_object) == dedent(
             """
             type SomeObject implements Foo & Bar & Baz {
               first: String
@@ -799,10 +791,33 @@ def describe_schema_builder():
             """
         )
 
-        assert print_all_ast_nodes(some_object) == object_sdl
+        expect_ast_node(
+            some_object,
+            dedent(
+                """
+            type SomeObject implements Foo {
+              first: String
+            }
+            """
+            ),
+        )
+        expect_extension_ast_nodes(
+            some_object,
+            dedent(
+                """
+            extend type SomeObject implements Bar {
+              second: Int
+            }
+
+            extend type SomeObject implements Baz {
+              third: Float
+            }
+            """
+            ),
+        )
 
     def correctly_extend_interface_type():
-        interface_sdl = dedent(
+        schema = build_schema(
             """
             interface SomeInterface {
               first: String
@@ -817,10 +832,9 @@ def describe_schema_builder():
             }
             """
         )
-        schema = build_schema(interface_sdl)
 
         some_interface = assert_interface_type(schema.get_type("SomeInterface"))
-        assert print_type(some_interface) + "\n" == dedent(
+        assert print_type(some_interface) == dedent(
             """
             interface SomeInterface {
               first: String
@@ -830,40 +844,65 @@ def describe_schema_builder():
             """
         )
 
-        assert print_all_ast_nodes(some_interface) == interface_sdl
+        expect_ast_node(
+            some_interface,
+            dedent(
+                """
+            interface SomeInterface {
+              first: String
+            }
+            """
+            ),
+        )
+        expect_extension_ast_nodes(
+            some_interface,
+            dedent(
+                """
+            extend interface SomeInterface {
+              second: Int
+            }
+
+            extend interface SomeInterface {
+              third: Float
+            }
+            """
+            ),
+        )
 
     def correctly_extend_union_type():
-        union_sdl = dedent(
+        schema = build_schema(
             """
             union SomeUnion = FirstType
-
             extend union SomeUnion = SecondType
-
             extend union SomeUnion = ThirdType
+
+            type FirstType
+            type SecondType
+            type ThirdType
             """
-        )
-        schema = build_schema(
-            union_sdl
-            + dedent(
-                """
-                type FirstType
-                type SecondType
-                type ThirdType
-                """
-            )
         )
 
         some_union = assert_union_type(schema.get_type("SomeUnion"))
-        assert print_type(some_union) + "\n" == dedent(
+        assert print_type(some_union) == dedent(
             """
             union SomeUnion = FirstType | SecondType | ThirdType
             """
         )
 
-        assert print_all_ast_nodes(some_union) == union_sdl
+        expect_ast_node(some_union, "union SomeUnion = FirstType")
+        expect_extension_ast_nodes(
+            some_union,
+            dedent(
+                """
+            extend union SomeUnion = SecondType
+
+            extend union SomeUnion = ThirdType
+            """
+            ),
+        )
 
     def correctly_extend_enum_type():
-        enum_sdl = dedent(
+        schema = build_schema(
             """
             enum SomeEnum {
               FIRST
@@ -878,10 +917,9 @@ def describe_schema_builder():
             }
             """
         )
-        schema = build_schema(enum_sdl)
 
         some_enum = assert_enum_type(schema.get_type("SomeEnum"))
-        assert print_type(some_enum) + "\n" == dedent(
+        assert print_type(some_enum) == dedent(
             """
             enum SomeEnum {
               FIRST
@@ -891,10 +929,33 @@ def describe_schema_builder():
             """
         )
 
-        assert print_all_ast_nodes(some_enum) == enum_sdl
+        expect_ast_node(
+            some_enum,
+            dedent(
+                """
+            enum SomeEnum {
+              FIRST
+            }
+            """
+            ),
+        )
+        expect_extension_ast_nodes(
+            some_enum,
+            dedent(
+                """
+            extend enum SomeEnum {
+              SECOND
+            }
+
+            extend enum SomeEnum {
+              THIRD
+            }
+            """
+            ),
+        )
 
     def correctly_extend_input_object_type():
-        input_sdl = dedent(
+        schema = build_schema(
             """
             input SomeInput {
               first: String
@@ -909,10 +970,9 @@ def describe_schema_builder():
             }
             """
         )
-        schema = build_schema(input_sdl)
 
         some_input = assert_input_object_type(schema.get_type("SomeInput"))
-        assert print_type(some_input) + "\n" == dedent(
+        assert print_type(some_input) == dedent(
             """
             input SomeInput {
               first: String
@@ -922,7 +982,30 @@ def describe_schema_builder():
             """
         )
 
-        assert print_all_ast_nodes(some_input) == input_sdl
+        expect_ast_node(
+            some_input,
+            dedent(
+                """
+            input SomeInput {
+              first: String
+            }
+            """
+            ),
+        )
+        expect_extension_ast_nodes(
+            some_input,
+            dedent(
+                """
+            extend input SomeInput {
+              second: Int
+            }
+
+            extend input SomeInput {
+              third: Float
+            }
+            """
+            ),
+        )
 
     def correctly_assign_ast_nodes():
         sdl = dedent(
@@ -970,7 +1053,7 @@ def describe_schema_builder():
         test_scalar = assert_scalar_type(schema.get_type("TestScalar"))
         test_directive = assert_directive(schema.get_directive("test"))
 
-        assert [
+        assert (
             schema.ast_node,
             query.ast_node,
             test_input.ast_node,
@@ -980,23 +1063,18 @@ def describe_schema_builder():
             test_type.ast_node,
             test_scalar.ast_node,
             test_directive.ast_node,
-        ] == ast.definitions
+        ) == ast.definitions
 
         test_field = query.fields["testField"]
-        assert print_ast_node(test_field) == (
-            "testField(testArg: TestInput): TestUnion"
-        )
-        assert print_ast_node(test_field.args["testArg"]) == "testArg: TestInput"
-        assert print_ast_node(test_input.fields["testInputField"]) == (
-            "testInputField: TestEnum"
-        )
+        expect_ast_node(test_field, "testField(testArg: TestInput): TestUnion")
+        expect_ast_node(test_field.args["testArg"], "testArg: TestInput")
+        expect_ast_node(test_input.fields["testInputField"], "testInputField: TestEnum")
         test_enum_value = test_enum.values["TEST_VALUE"]
-        assert test_enum_value
-        assert print_ast_node(test_enum_value) == "TEST_VALUE"
-        assert print_ast_node(test_interface.fields["interfaceField"]) == (
-            "interfaceField: String"
+        expect_ast_node(test_enum_value, "TEST_VALUE")
+        expect_ast_node(
+            test_interface.fields["interfaceField"], "interfaceField: String"
         )
-        assert print_ast_node(test_directive.args["arg"]) == "arg: TestScalar"
+        expect_ast_node(test_directive.args["arg"], "arg: TestScalar")
 
     def root_operation_types_with_custom_names():
         schema = build_schema(

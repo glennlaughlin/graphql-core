@@ -3,12 +3,16 @@ from asyncio import CancelledError, Event, ensure_future, sleep
 
 from pytest import mark, raises
 
-from graphql.subscription.map_async_iterator import MapAsyncIterator
+from graphql.execution import MapAsyncIterator
 
 
-async def anext(iterable):
-    """Return the next item from an async iterator."""
-    return await iterable.__anext__()
+try:  # pragma: no cover
+    anext
+except NameError:  # pragma: no cover (Python < 3.10)
+    # noinspection PyShadowingBuiltins
+    async def anext(iterator):
+        """Return the next item from an async iterator."""
+        return await iterator.__anext__()
 
 
 def describe_map_async_iterator():
@@ -28,10 +32,10 @@ def describe_map_async_iterator():
             assert await anext(doubles)
 
     @mark.asyncio
-    async def maps_over_async_iterator():
+    async def maps_over_async_iterable():
         items = [1, 2, 3]
 
-        class Iterator:
+        class Iterable:
             def __aiter__(self):
                 return self
 
@@ -41,7 +45,7 @@ def describe_map_async_iterator():
                 except IndexError:
                     raise StopAsyncIteration
 
-        doubles = MapAsyncIterator(Iterator(), lambda x: x + x)
+        doubles = MapAsyncIterator(Iterable(), lambda x: x + x)
 
         values = [value async for value in doubles]
 
@@ -99,10 +103,10 @@ def describe_map_async_iterator():
             await anext(doubles)
 
     @mark.asyncio
-    async def allows_returning_early_from_mapped_async_iterator():
+    async def allows_returning_early_from_mapped_async_iterable():
         items = [1, 2, 3]
 
-        class Iterator:
+        class Iterable:
             def __aiter__(self):
                 return self
 
@@ -112,7 +116,7 @@ def describe_map_async_iterator():
                 except IndexError:  # pragma: no cover
                     raise StopAsyncIteration
 
-        doubles = MapAsyncIterator(Iterator(), lambda x: x + x)
+        doubles = MapAsyncIterator(Iterable(), lambda x: x + x)
 
         assert await anext(doubles) == 2
         assert await anext(doubles) == 4
@@ -151,10 +155,10 @@ def describe_map_async_iterator():
             assert await anext(doubles)
 
     @mark.asyncio
-    async def allows_throwing_errors_through_async_iterators():
+    async def allows_throwing_errors_through_async_iterable():
         items = [1, 2, 3]
 
-        class Iterator:
+        class Iterable:
             def __aiter__(self):
                 return self
 
@@ -164,7 +168,7 @@ def describe_map_async_iterator():
                 except IndexError:  # pragma: no cover
                     raise StopAsyncIteration
 
-        doubles = MapAsyncIterator(Iterator(), lambda x: x + x)
+        doubles = MapAsyncIterator(Iterable(), lambda x: x + x)
 
         assert await anext(doubles) == 2
         assert await anext(doubles) == 4
@@ -283,23 +287,6 @@ def describe_map_async_iterator():
             await doubles.athrow(RuntimeError("Goodbye"))
 
         assert str(exc_info.value) == "Goodbye"
-
-    @mark.asyncio
-    async def maps_over_thrown_errors_if_second_callback_provided():
-        async def source():
-            yield "Hello"
-            raise RuntimeError("Goodbye")
-
-        doubles = MapAsyncIterator(source(), lambda x: x + x, lambda error: error)
-
-        assert await anext(doubles) == "HelloHello"
-
-        result = await anext(doubles)
-        assert isinstance(result, RuntimeError)
-        assert str(result) == "Goodbye"
-
-        with raises(StopAsyncIteration):
-            await anext(doubles)
 
     @mark.asyncio
     async def can_use_simple_iterator_instead_of_generator():

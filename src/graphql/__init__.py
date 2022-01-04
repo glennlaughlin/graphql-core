@@ -34,16 +34,196 @@ The sub-packages of GraphQL-core 3 are:
   - :mod:`graphql.error`: Creating and formatting GraphQL errors.
   - :mod:`graphql.utilities`:
     Common useful computations upon the GraphQL language and type objects.
-  - :mod:`graphql.subscription`: Subscribe to data updates.
 """
 
 # The GraphQL-core 3 and GraphQL.js version info.
 
 from .version import version, version_info, version_js, version_info_js
 
-# The primary entry point into fulfilling a GraphQL request.
+# Utilities for compatibility with the Python language.
+from .pyutils import Undefined, UndefinedType
 
-from .graphql import graphql, graphql_sync
+# Create, format, and print GraphQL errors.
+from .error import (
+    GraphQLError,
+    GraphQLErrorExtensions,
+    GraphQLFormattedError,
+    GraphQLSyntaxError,
+    located_error,
+)
+
+# Parse and operate on GraphQL language source files.
+from .language import (
+    Source,
+    get_location,
+    # Print source location
+    print_location,
+    print_source_location,
+    # Lex
+    Lexer,
+    TokenKind,
+    # Parse
+    parse,
+    parse_value,
+    parse_const_value,
+    parse_type,
+    # Print
+    print_ast,
+    # Visit
+    visit,
+    ParallelVisitor,
+    Visitor,
+    VisitorAction,
+    VisitorKeyMap,
+    BREAK,
+    SKIP,
+    REMOVE,
+    IDLE,
+    DirectiveLocation,
+    # Predicates
+    is_definition_node,
+    is_executable_definition_node,
+    is_selection_node,
+    is_value_node,
+    is_const_value_node,
+    is_type_node,
+    is_type_system_definition_node,
+    is_type_definition_node,
+    is_type_system_extension_node,
+    is_type_extension_node,
+    # Types
+    SourceLocation,
+    Location,
+    Token,
+    # AST nodes
+    Node,
+    # Each kind of AST node
+    NameNode,
+    DocumentNode,
+    DefinitionNode,
+    ExecutableDefinitionNode,
+    OperationDefinitionNode,
+    OperationType,
+    VariableDefinitionNode,
+    VariableNode,
+    SelectionSetNode,
+    SelectionNode,
+    FieldNode,
+    ArgumentNode,
+    ConstArgumentNode,
+    FragmentSpreadNode,
+    InlineFragmentNode,
+    FragmentDefinitionNode,
+    ValueNode,
+    ConstValueNode,
+    IntValueNode,
+    FloatValueNode,
+    StringValueNode,
+    BooleanValueNode,
+    NullValueNode,
+    EnumValueNode,
+    ListValueNode,
+    ConstListValueNode,
+    ObjectValueNode,
+    ConstObjectValueNode,
+    ObjectFieldNode,
+    ConstObjectFieldNode,
+    DirectiveNode,
+    ConstDirectiveNode,
+    TypeNode,
+    NamedTypeNode,
+    ListTypeNode,
+    NonNullTypeNode,
+    TypeSystemDefinitionNode,
+    SchemaDefinitionNode,
+    OperationTypeDefinitionNode,
+    TypeDefinitionNode,
+    ScalarTypeDefinitionNode,
+    ObjectTypeDefinitionNode,
+    FieldDefinitionNode,
+    InputValueDefinitionNode,
+    InterfaceTypeDefinitionNode,
+    UnionTypeDefinitionNode,
+    EnumTypeDefinitionNode,
+    EnumValueDefinitionNode,
+    InputObjectTypeDefinitionNode,
+    DirectiveDefinitionNode,
+    TypeSystemExtensionNode,
+    SchemaExtensionNode,
+    TypeExtensionNode,
+    ScalarTypeExtensionNode,
+    ObjectTypeExtensionNode,
+    InterfaceTypeExtensionNode,
+    UnionTypeExtensionNode,
+    EnumTypeExtensionNode,
+    InputObjectTypeExtensionNode,
+)
+
+# Utilities for operating on GraphQL type schema and parsed sources.
+from .utilities import (
+    # Produce the GraphQL query recommended for a full schema introspection.
+    # Accepts optional IntrospectionOptions.
+    get_introspection_query,
+    IntrospectionQuery,
+    # Get the target Operation from a Document.
+    get_operation_ast,
+    # Get the Type for the target Operation AST.
+    get_operation_root_type,
+    # Convert a GraphQLSchema to an IntrospectionQuery.
+    introspection_from_schema,
+    # Build a GraphQLSchema from an introspection result.
+    build_client_schema,
+    # Build a GraphQLSchema from a parsed GraphQL Schema language AST.
+    build_ast_schema,
+    # Build a GraphQLSchema from a GraphQL schema language document.
+    build_schema,
+    # Extend an existing GraphQLSchema from a parsed GraphQL Schema language AST.
+    extend_schema,
+    # Sort a GraphQLSchema.
+    lexicographic_sort_schema,
+    # Print a GraphQLSchema to GraphQL Schema language.
+    print_schema,
+    # Print a GraphQLType to GraphQL Schema language.
+    print_type,
+    # Prints the built-in introspection schema in the Schema Language format.
+    print_introspection_schema,
+    # Create a GraphQLType from a GraphQL language AST.
+    type_from_ast,
+    # Create a Python value from a GraphQL language AST with a Type.
+    value_from_ast,
+    # Create a Python value from a GraphQL language AST without a Type.
+    value_from_ast_untyped,
+    # Create a GraphQL language AST from a Python value.
+    ast_from_value,
+    # A helper to use within recursive-descent visitors which need to be aware of the
+    # GraphQL type system.
+    TypeInfo,
+    TypeInfoVisitor,
+    # Coerce a Python value to a GraphQL type, or produce errors.
+    coerce_input_value,
+    # Concatenates multiple ASTs together.
+    concat_ast,
+    # Separate an AST into an AST per Operation.
+    separate_operations,
+    # Strip characters that are not significant to the validity or execution
+    # of a GraphQL document.
+    strip_ignored_characters,
+    # Comparators for types
+    is_equal_type,
+    is_type_sub_type_of,
+    do_types_overlap,
+    # Assert a string is a valid GraphQL name.
+    assert_valid_name,
+    # Determine if a string is a valid GraphQL name.
+    is_valid_name_error,
+    # Compare two GraphQLSchemas and detect breaking changes.
+    BreakingChange,
+    BreakingChangeType,
+    DangerousChange,
+    DangerousChangeType,
+    find_breaking_changes,
+    find_dangerous_changes,
+)
 
 # Create and operate on GraphQL type definitions and schema.
 from .type import (
@@ -132,6 +312,9 @@ from .type import (
     # Validate GraphQL schema.
     validate_schema,
     assert_valid_schema,
+    #  Uphold the spec rules about naming
+    assert_name,
+    assert_enum_value_name,
     # Types
     GraphQLType,
     GraphQLInputType,
@@ -142,7 +325,11 @@ from .type import (
     GraphQLWrappingType,
     GraphQLNullableType,
     GraphQLNamedType,
+    GraphQLNamedInputType,
+    GraphQLNamedOutputType,
     Thunk,
+    ThunkCollection,
+    ThunkMapping,
     GraphQLArgument,
     GraphQLArgumentMap,
     GraphQLEnumValue,
@@ -160,122 +347,6 @@ from .type import (
     ResponsePath,
     GraphQLTypeResolver,
 )
-
-# Parse and operate on GraphQL language source files.
-from .language import (
-    Source,
-    get_location,
-    # Print source location
-    print_location,
-    print_source_location,
-    # Lex
-    Lexer,
-    TokenKind,
-    # Parse
-    parse,
-    parse_value,
-    parse_type,
-    # Print
-    print_ast,
-    # Visit
-    visit,
-    ParallelVisitor,
-    Visitor,
-    VisitorAction,
-    BREAK,
-    SKIP,
-    REMOVE,
-    IDLE,
-    DirectiveLocation,
-    # Predicates
-    is_definition_node,
-    is_executable_definition_node,
-    is_selection_node,
-    is_value_node,
-    is_type_node,
-    is_type_system_definition_node,
-    is_type_definition_node,
-    is_type_system_extension_node,
-    is_type_extension_node,
-    # Types
-    SourceLocation,
-    Location,
-    Token,
-    # AST nodes
-    Node,
-    # Each kind of AST node
-    NameNode,
-    DocumentNode,
-    DefinitionNode,
-    ExecutableDefinitionNode,
-    OperationDefinitionNode,
-    OperationType,
-    VariableDefinitionNode,
-    VariableNode,
-    SelectionSetNode,
-    SelectionNode,
-    FieldNode,
-    ArgumentNode,
-    FragmentSpreadNode,
-    InlineFragmentNode,
-    FragmentDefinitionNode,
-    ValueNode,
-    IntValueNode,
-    FloatValueNode,
-    StringValueNode,
-    BooleanValueNode,
-    NullValueNode,
-    EnumValueNode,
-    ListValueNode,
-    ObjectValueNode,
-    ObjectFieldNode,
-    DirectiveNode,
-    TypeNode,
-    NamedTypeNode,
-    ListTypeNode,
-    NonNullTypeNode,
-    TypeSystemDefinitionNode,
-    SchemaDefinitionNode,
-    OperationTypeDefinitionNode,
-    TypeDefinitionNode,
-    ScalarTypeDefinitionNode,
-    ObjectTypeDefinitionNode,
-    FieldDefinitionNode,
-    InputValueDefinitionNode,
-    InterfaceTypeDefinitionNode,
-    UnionTypeDefinitionNode,
-    EnumTypeDefinitionNode,
-    EnumValueDefinitionNode,
-    InputObjectTypeDefinitionNode,
-    DirectiveDefinitionNode,
-    TypeSystemExtensionNode,
-    SchemaExtensionNode,
-    TypeExtensionNode,
-    ScalarTypeExtensionNode,
-    ObjectTypeExtensionNode,
-    InterfaceTypeExtensionNode,
-    UnionTypeExtensionNode,
-    EnumTypeExtensionNode,
-    InputObjectTypeExtensionNode,
-)
-
-# Execute GraphQL documents.
-from .execution import (
-    execute,
-    execute_sync,
-    default_field_resolver,
-    default_type_resolver,
-    get_directive_values,
-    # Types
-    ExecutionContext,
-    ExecutionResult,
-    # Middleware
-    Middleware,
-    MiddlewareManager,
-)
-
-from .subscription import subscribe, create_source_event_stream, MapAsyncIterator
-
 
 # Validate GraphQL queries.
 from .validation import (
@@ -319,6 +390,7 @@ from .validation import (
     UniqueTypeNamesRule,
     UniqueEnumValueNamesRule,
     UniqueFieldDefinitionNamesRule,
+    UniqueArgumentDefinitionNamesRule,
     UniqueDirectiveNamesRule,
     PossibleTypeExtensionsRule,
     # Custom validation rules
@@ -326,86 +398,28 @@ from .validation import (
     NoSchemaIntrospectionCustomRule,
 )
 
-# Create, format, and print GraphQL errors.
-from .error import (
-    GraphQLError,
-    GraphQLSyntaxError,
-    located_error,
-    format_error,
-    print_error,
+# Execute GraphQL documents.
+from .execution import (
+    execute,
+    execute_sync,
+    default_field_resolver,
+    default_type_resolver,
+    get_directive_values,
+    # Types
+    ExecutionContext,
+    ExecutionResult,
+    FormattedExecutionResult,
+    # Subscription
+    subscribe,
+    create_source_event_stream,
+    MapAsyncIterator,
+    # Middleware
+    Middleware,
+    MiddlewareManager,
 )
 
-# Utilities for operating on GraphQL type schema and parsed sources.
-from .utilities import (
-    # Produce the GraphQL query recommended for a full schema introspection.
-    # Accepts optional IntrospectionOptions.
-    get_introspection_query,
-    # Get the target Operation from a Document.
-    get_operation_ast,
-    # Get the Type for the target Operation AST.
-    get_operation_root_type,
-    # Convert a GraphQLSchema to an IntrospectionQuery.
-    introspection_from_schema,
-    # Build a GraphQLSchema from an introspection result.
-    build_client_schema,
-    # Build a GraphQLSchema from a parsed GraphQL Schema language AST.
-    build_ast_schema,
-    # Build a GraphQLSchema from a GraphQL schema language document.
-    build_schema,
-    # @deprecated: Get the description from a schema AST node.
-    get_description,
-    # Extend an existing GraphQLSchema from a parsed GraphQL Schema language AST.
-    extend_schema,
-    # Sort a GraphQLSchema.
-    lexicographic_sort_schema,
-    # Print a GraphQLSchema to GraphQL Schema language.
-    print_schema,
-    # Print a GraphQLType to GraphQL Schema language.
-    print_type,
-    # Prints the built-in introspection schema in the Schema Language format.
-    print_introspection_schema,
-    # Create a GraphQLType from a GraphQL language AST.
-    type_from_ast,
-    # Create a Python value from a GraphQL language AST with a Type.
-    value_from_ast,
-    # Create a Python value from a GraphQL language AST without a Type.
-    value_from_ast_untyped,
-    # Create a GraphQL language AST from a Python value.
-    ast_from_value,
-    # A helper to use within recursive-descent visitors which need to be aware of the
-    # GraphQL type system.
-    TypeInfo,
-    TypeInfoVisitor,
-    # Coerce a Python value to a GraphQL type, or produce errors.
-    coerce_input_value,
-    # Concatenates multiple ASTs together.
-    concat_ast,
-    # Separate an AST into an AST per Operation.
-    separate_operations,
-    # Strip characters that are not significant to the validity or execution
-    # of a GraphQL document.
-    strip_ignored_characters,
-    # Comparators for types
-    is_equal_type,
-    is_type_sub_type_of,
-    do_types_overlap,
-    # Assert a string is a valid GraphQL name.
-    assert_valid_name,
-    # Determine if a string is a valid GraphQL name.
-    is_valid_name_error,
-    # Compare two GraphQLSchemas and detect breaking changes.
-    BreakingChange,
-    BreakingChangeType,
-    DangerousChange,
-    DangerousChangeType,
-    find_breaking_changes,
-    find_dangerous_changes,
-    # Report all deprecated usages within a GraphQL document (deprecated).
-    find_deprecated_usages,
-)
-
-# Utilities for compatibility with the Python language.
-from .pyutils import Undefined, UndefinedType
+# The primary entry point into fulfilling a GraphQL request.
+from .graphql import graphql, graphql_sync
 
 INVALID = Undefined  # deprecated alias
 
@@ -499,6 +513,8 @@ __all__ = [
     "get_named_type",
     "validate_schema",
     "assert_valid_schema",
+    "assert_name",
+    "assert_enum_value_name",
     "GraphQLType",
     "GraphQLInputType",
     "GraphQLOutputType",
@@ -508,7 +524,11 @@ __all__ = [
     "GraphQLWrappingType",
     "GraphQLNullableType",
     "GraphQLNamedType",
+    "GraphQLNamedInputType",
+    "GraphQLNamedOutputType",
     "Thunk",
+    "ThunkCollection",
+    "ThunkMapping",
     "GraphQLArgument",
     "GraphQLArgumentMap",
     "GraphQLEnumValue",
@@ -533,6 +553,7 @@ __all__ = [
     "TokenKind",
     "parse",
     "parse_value",
+    "parse_const_value",
     "parse_type",
     "print_ast",
     "visit",
@@ -540,6 +561,7 @@ __all__ = [
     "TypeInfoVisitor",
     "Visitor",
     "VisitorAction",
+    "VisitorKeyMap",
     "BREAK",
     "SKIP",
     "REMOVE",
@@ -549,6 +571,7 @@ __all__ = [
     "is_executable_definition_node",
     "is_selection_node",
     "is_value_node",
+    "is_const_value_node",
     "is_type_node",
     "is_type_system_definition_node",
     "is_type_definition_node",
@@ -570,10 +593,12 @@ __all__ = [
     "SelectionNode",
     "FieldNode",
     "ArgumentNode",
+    "ConstArgumentNode",
     "FragmentSpreadNode",
     "InlineFragmentNode",
     "FragmentDefinitionNode",
     "ValueNode",
+    "ConstValueNode",
     "IntValueNode",
     "FloatValueNode",
     "StringValueNode",
@@ -581,9 +606,13 @@ __all__ = [
     "NullValueNode",
     "EnumValueNode",
     "ListValueNode",
+    "ConstListValueNode",
     "ObjectValueNode",
+    "ConstObjectValueNode",
     "ObjectFieldNode",
+    "ConstObjectFieldNode",
     "DirectiveNode",
+    "ConstDirectiveNode",
     "TypeNode",
     "NamedTypeNode",
     "ListTypeNode",
@@ -618,6 +647,7 @@ __all__ = [
     "get_directive_values",
     "ExecutionContext",
     "ExecutionResult",
+    "FormattedExecutionResult",
     "Middleware",
     "MiddlewareManager",
     "subscribe",
@@ -660,23 +690,24 @@ __all__ = [
     "UniqueTypeNamesRule",
     "UniqueEnumValueNamesRule",
     "UniqueFieldDefinitionNamesRule",
+    "UniqueArgumentDefinitionNamesRule",
     "UniqueDirectiveNamesRule",
     "PossibleTypeExtensionsRule",
     "NoDeprecatedCustomRule",
     "NoSchemaIntrospectionCustomRule",
     "GraphQLError",
+    "GraphQLErrorExtensions",
+    "GraphQLFormattedError",
     "GraphQLSyntaxError",
     "located_error",
-    "format_error",
-    "print_error",
     "get_introspection_query",
+    "IntrospectionQuery",
     "get_operation_ast",
     "get_operation_root_type",
     "introspection_from_schema",
     "build_client_schema",
     "build_ast_schema",
     "build_schema",
-    "get_description",
     "extend_schema",
     "lexicographic_sort_schema",
     "print_schema",
@@ -698,7 +729,6 @@ __all__ = [
     "is_valid_name_error",
     "find_breaking_changes",
     "find_dangerous_changes",
-    "find_deprecated_usages",
     "BreakingChange",
     "BreakingChangeType",
     "DangerousChange",

@@ -49,7 +49,7 @@ from .type_from_ast import type_from_ast
 __all__ = ["TypeInfo", "TypeInfoVisitor"]
 
 
-GetFieldDefType = Callable[
+GetFieldDefFn = Callable[
     [GraphQLSchema, GraphQLType, FieldNode], Optional[GraphQLField]
 ]
 
@@ -66,17 +66,15 @@ class TypeInfo:
     def __init__(
         self,
         schema: GraphQLSchema,
-        get_field_def_fn: Optional[GetFieldDefType] = None,
         initial_type: Optional[GraphQLType] = None,
+        get_field_def_fn: Optional[GetFieldDefFn] = None,
     ) -> None:
         """Initialize the TypeInfo for the given GraphQL schema.
 
-        The experimental optional second parameter is only needed in order to support
-        non-spec-compliant code bases. You should never need to use it. It may disappear
-        in the future.
-
         Initial type may be provided in rare cases to facilitate traversals beginning
         somewhere other than documents.
+
+        The optional last parameter is deprecated and will be removed in v3.3.
         """
         self._schema = schema
         self._type_stack: List[Optional[GraphQLOutputType]] = []
@@ -87,7 +85,7 @@ class TypeInfo:
         self._directive: Optional[GraphQLDirective] = None
         self._argument: Optional[GraphQLArgument] = None
         self._enum_value: Optional[GraphQLEnumValue] = None
-        self._get_field_def = get_field_def_fn or get_field_def
+        self._get_field_def: GetFieldDefFn = get_field_def_fn or get_field_def
         if initial_type:
             if is_input_type(initial_type):
                 self._input_type_stack.append(cast(GraphQLInputType, initial_type))
@@ -168,8 +166,8 @@ class TypeInfo:
         self._directive = self._schema.get_directive(node.name.value)
 
     def enter_operation_definition(self, node: OperationDefinitionNode) -> None:
-        type_ = getattr(self._schema, f"{node.operation.value}_type")
-        self._type_stack.append(type_ if is_object_type(type_) else None)
+        root_type = self._schema.get_root_type(node.operation)
+        self._type_stack.append(root_type if is_object_type(root_type) else None)
 
     def enter_inline_fragment(self, node: InlineFragmentNode) -> None:
         type_condition_ast = node.type_condition
@@ -301,12 +299,13 @@ class TypeInfoVisitor(Visitor):
     """A visitor which maintains a provided TypeInfo."""
 
     def __init__(self, type_info: "TypeInfo", visitor: Visitor):
+        super().__init__()
         self.type_info = type_info
         self.visitor = visitor
 
     def enter(self, node: Node, *args: Any) -> Any:
         self.type_info.enter(node)
-        fn = self.visitor.get_visit_fn(node.kind)
+        fn = self.visitor.get_enter_leave_for_kind(node.kind).enter
         if fn:
             result = fn(node, *args)
             if result is not None:
@@ -316,7 +315,7 @@ class TypeInfoVisitor(Visitor):
             return result
 
     def leave(self, node: Node, *args: Any) -> Any:
-        fn = self.visitor.get_visit_fn(node.kind, is_leaving=True)
+        fn = self.visitor.get_enter_leave_for_kind(node.kind).leave
         result = fn(node, *args) if fn else None
         self.type_info.leave(node)
         return result

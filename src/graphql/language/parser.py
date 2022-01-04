@@ -4,6 +4,9 @@ from functools import partial
 from .ast import (
     ArgumentNode,
     BooleanValueNode,
+    ConstArgumentNode,
+    ConstDirectiveNode,
+    ConstValueNode,
     DefinitionNode,
     DirectiveDefinitionNode,
     DirectiveNode,
@@ -46,7 +49,6 @@ from .ast import (
     SelectionSetNode,
     StringValueNode,
     TypeNode,
-    TypeSystemDefinitionNode,
     TypeSystemExtensionNode,
     UnionTypeDefinitionNode,
     UnionTypeExtensionNode,
@@ -61,7 +63,7 @@ from .source import Source, is_source
 from .token_kind import TokenKind
 from ..error import GraphQLError, GraphQLSyntaxError
 
-__all__ = ["parse", "parse_type", "parse_value"]
+__all__ = ["parse", "parse_type", "parse_value", "parse_const_value"]
 
 T = TypeVar("T")
 
@@ -71,7 +73,7 @@ SourceType = Union[Source, str]
 def parse(
     source: SourceType,
     no_location: bool = False,
-    experimental_fragment_variables: bool = False,
+    allow_legacy_fragment_variables: bool = False,
 ) -> DocumentNode:
     """Given a GraphQL source, parse it into a Document.
 
@@ -81,9 +83,9 @@ def parse(
     they correspond to. The ``no_location`` option disables that behavior for
     performance or testing.
 
-    Experimental features:
+    Legacy feature (will be removed in v3.3):
 
-    If ``experimental_fragment_variables`` is set to ``True``, the parser will
+    If ``allow_legacy_fragment_variables`` is set to ``True``, the parser will
     understand and parse variable definitions contained in a fragment definition.
     They'll be represented in the
     :attr:`~graphql.language.FragmentDefinitionNode.variable_definitions` field
@@ -98,7 +100,7 @@ def parse(
     parser = Parser(
         source,
         no_location=no_location,
-        experimental_fragment_variables=experimental_fragment_variables,
+        allow_legacy_fragment_variables=allow_legacy_fragment_variables,
     )
     return parser.parse_document()
 
@@ -106,7 +108,7 @@ def parse(
 def parse_value(
     source: SourceType,
     no_location: bool = False,
-    experimental_fragment_variables: bool = False,
+    allow_legacy_fragment_variables: bool = False,
 ) -> ValueNode:
     """Parse the AST for a given string containing a GraphQL value.
 
@@ -121,7 +123,7 @@ def parse_value(
     parser = Parser(
         source,
         no_location=no_location,
-        experimental_fragment_variables=experimental_fragment_variables,
+        allow_legacy_fragment_variables=allow_legacy_fragment_variables,
     )
     parser.expect_token(TokenKind.SOF)
     value = parser.parse_value_literal(False)
@@ -129,10 +131,31 @@ def parse_value(
     return value
 
 
+def parse_const_value(
+    source: SourceType,
+    no_location: bool = False,
+    allow_legacy_fragment_variables: bool = False,
+) -> ConstValueNode:
+    """Parse the AST for a given string containing a GraphQL constant value.
+
+    Similar to parse_value, but raises a arse error if it encounters a variable.
+    The return type will be a constant value.
+    """
+    parser = Parser(
+        source,
+        no_location=no_location,
+        allow_legacy_fragment_variables=allow_legacy_fragment_variables,
+    )
+    parser.expect_token(TokenKind.SOF)
+    value = parser.parse_const_value_literal()
+    parser.expect_token(TokenKind.EOF)
+    return value
+
+
 def parse_type(
     source: SourceType,
     no_location: bool = False,
-    experimental_fragment_variables: bool = False,
+    allow_legacy_fragment_variables: bool = False,
 ) -> TypeNode:
     """Parse the AST for a given string containing a GraphQL Type.
 
@@ -147,7 +170,7 @@ def parse_type(
     parser = Parser(
         source,
         no_location=no_location,
-        experimental_fragment_variables=experimental_fragment_variables,
+        allow_legacy_fragment_variables=allow_legacy_fragment_variables,
     )
     parser.expect_token(TokenKind.SOF)
     type_ = parser.parse_type_reference()
@@ -169,13 +192,13 @@ class Parser:
 
     _lexer: Lexer
     _no_Location: bool
-    _experimental_fragment_variables: bool
+    _allow_legacy_fragment_variables: bool
 
     def __init__(
         self,
         source: SourceType,
         no_location: bool = False,
-        experimental_fragment_variables: bool = False,
+        allow_legacy_fragment_variables: bool = False,
     ):
         source = (
             cast(Source, source) if is_source(source) else Source(cast(str, source))
@@ -183,7 +206,7 @@ class Parser:
 
         self._lexer = Lexer(source)
         self._no_location = no_location
-        self._experimental_fragment_variables = experimental_fragment_variables
+        self._allow_legacy_fragment_variables = allow_legacy_fragment_variables
 
     def parse_name(self) -> NameNode:
         """Convert a name lex token into a name parse node."""
@@ -200,22 +223,20 @@ class Parser:
             loc=self.loc(start),
         )
 
-    _parse_definition_method_names: Dict[str, str] = {
+    _parse_type_system_definition_method_names: Dict[str, str] = {
+        "schema": "schema_definition",
+        "scalar": "scalar_type_definition",
+        "type": "object_type_definition",
+        "interface": "interface_type_definition",
+        "union": "union_type_definition",
+        "enum": "enum_type_definition",
+        "input": "input_object_type_definition",
+        "directive": "directive_definition",
+    }
+
+    _parse_other_definition_method_names: Dict[str, str] = {
         **dict.fromkeys(("query", "mutation", "subscription"), "operation_definition"),
         "fragment": "fragment_definition",
-        **dict.fromkeys(
-            (
-                "schema",
-                "scalar",
-                "type",
-                "interface",
-                "union",
-                "enum",
-                "input",
-                "directive",
-            ),
-            "type_system_definition",
-        ),
         "extend": "type_system_extension",
     }
 
@@ -223,23 +244,43 @@ class Parser:
         """Definition: ExecutableDefinition or TypeSystemDefinition/Extension
 
         ExecutableDefinition: OperationDefinition or FragmentDefinition
+
+        TypeSystemDefinition: SchemaDefinition, TypeDefinition or DirectiveDefinition
+
+        TypeDefinition: ScalarTypeDefinition, ObjectTypeDefinition,
+            InterfaceTypeDefinition, UnionTypeDefinition,
+            EnumTypeDefinition or InputObjectTypeDefinition
         """
-        if self.peek(TokenKind.NAME):
-            method_name = self._parse_definition_method_names.get(
-                cast(str, self._lexer.token.value)
+        if self.peek(TokenKind.BRACE_L):
+            return self.parse_operation_definition()
+
+        # Many definitions begin with a description and require a lookahead.
+        has_description = self.peek_description()
+        keyword_token = (
+            self._lexer.lookahead() if has_description else self._lexer.token
+        )
+
+        if keyword_token.kind is TokenKind.NAME:
+            token_name = cast(str, keyword_token.value)
+            method_name = self._parse_type_system_definition_method_names.get(
+                token_name
             )
             if method_name:
                 return getattr(self, f"parse_{method_name}")()
-        elif self.peek(TokenKind.BRACE_L):
-            return self.parse_operation_definition()
-        elif self.peek_description():
-            return self.parse_type_system_definition()
-        raise self.unexpected()
 
-    _parse_executable_definition_method_names: Dict[str, str] = {
-        **dict.fromkeys(("query", "mutation", "subscription"), "operation_definition"),
-        **dict.fromkeys(("fragment",), "fragment_definition"),
-    }
+            if has_description:
+                raise GraphQLSyntaxError(
+                    self._lexer.source,
+                    self._lexer.token.start,
+                    "Unexpected description,"
+                    " descriptions are supported only on type definitions.",
+                )
+
+            method_name = self._parse_other_definition_method_names.get(token_name)
+            if method_name:
+                return getattr(self, f"parse_{method_name}")()
+
+        raise self.unexpected(keyword_token)
 
     # Implement the parsing rules in the Operations section.
 
@@ -286,10 +327,10 @@ class Parser:
         return VariableDefinitionNode(
             variable=self.parse_variable(),
             type=self.expect_token(TokenKind.COLON) and self.parse_type_reference(),
-            default_value=self.parse_value_literal(True)
+            default_value=self.parse_const_value_literal()
             if self.expect_optional_token(TokenKind.EQUALS)
             else None,
-            directives=self.parse_directives(True),
+            directives=self.parse_const_directives(),
             loc=self.loc(start),
         )
 
@@ -339,26 +380,22 @@ class Parser:
     def parse_arguments(self, is_const: bool) -> List[ArgumentNode]:
         """Arguments[Const]: (Argument[?Const]+)"""
         item = self.parse_const_argument if is_const else self.parse_argument
+        item = cast(Callable[[], ArgumentNode], item)
         return self.optional_many(TokenKind.PAREN_L, item, TokenKind.PAREN_R)
 
-    def parse_argument(self) -> ArgumentNode:
-        """Argument: Name : Value"""
+    def parse_argument(self, is_const: bool = False) -> ArgumentNode:
+        """Argument[Const]: Name : Value[?Const]"""
         start = self._lexer.token
         name = self.parse_name()
 
         self.expect_token(TokenKind.COLON)
         return ArgumentNode(
-            name=name, value=self.parse_value_literal(False), loc=self.loc(start)
+            name=name, value=self.parse_value_literal(is_const), loc=self.loc(start)
         )
 
-    def parse_const_argument(self) -> ArgumentNode:
-        """Argument[Const]: Name : Value[?Const]"""
-        start = self._lexer.token
-        return ArgumentNode(
-            name=self.parse_name(),
-            value=self.expect_token(TokenKind.COLON) and self.parse_value_literal(True),
-            loc=self.loc(start),
-        )
+    def parse_const_argument(self) -> ConstArgumentNode:
+        """Argument[Const]: Name : Value[Const]"""
+        return cast(ConstArgumentNode, self.parse_argument(True))
 
     # Implement the parsing rules in the Fragments section.
 
@@ -389,9 +426,9 @@ class Parser:
         """FragmentDefinition"""
         start = self._lexer.token
         self.expect_keyword("fragment")
-        # Experimental support for defining variables within fragments changes
+        # Legacy support for defining variables within fragments changes
         # the grammar of FragmentDefinition
-        if self._experimental_fragment_variables:
+        if self._allow_legacy_fragment_variables:
             return FragmentDefinitionNode(
                 name=self.parse_fragment_name(),
                 variable_definitions=self.parse_variable_definitions(),
@@ -498,9 +535,21 @@ class Parser:
         return EnumValueNode(value=value, loc=self.loc(token))
 
     def parse_variable_value(self, is_const: bool) -> VariableNode:
-        if not is_const:
-            return self.parse_variable()
-        raise self.unexpected()
+        if is_const:
+            variable_token = self.expect_token(TokenKind.DOLLAR)
+            token = self._lexer.token
+            if token.kind is TokenKind.NAME:
+                var_name = token.value
+                raise GraphQLSyntaxError(
+                    self._lexer.source,
+                    variable_token.start,
+                    f"Unexpected variable '${var_name}' in constant value.",
+                )
+            raise self.unexpected(variable_token)
+        return self.parse_variable()
+
+    def parse_const_value_literal(self) -> ConstValueNode:
+        return cast(ConstValueNode, self.parse_value_literal(True))
 
     # Implement the parsing rules in the Directives section.
 
@@ -511,6 +560,9 @@ class Parser:
         while self.peek(TokenKind.AT):
             append(self.parse_directive(is_const))
         return directives
+
+    def parse_const_directives(self) -> List[ConstDirectiveNode]:
+        return cast(List[ConstDirectiveNode], self.parse_directives(True))
 
     def parse_directive(self, is_const: bool) -> DirectiveNode:
         """Directive[Const]: @ Name Arguments[?Const]?"""
@@ -527,10 +579,11 @@ class Parser:
     def parse_type_reference(self) -> TypeNode:
         """Type: NamedType or ListType or NonNullType"""
         start = self._lexer.token
+        type_: TypeNode
         if self.expect_optional_token(TokenKind.BRACKET_L):
-            type_ = self.parse_type_reference()
+            inner_type = self.parse_type_reference()
             self.expect_token(TokenKind.BRACKET_R)
-            type_ = ListTypeNode(type=type_, loc=self.loc(start))
+            type_ = ListTypeNode(type=inner_type, loc=self.loc(start))
         else:
             type_ = self.parse_named_type()
         if self.expect_optional_token(TokenKind.BANG):
@@ -543,30 +596,6 @@ class Parser:
         return NamedTypeNode(name=self.parse_name(), loc=self.loc(start))
 
     # Implement the parsing rules in the Type Definition section.
-
-    _parse_type_system_definition_method_names: Dict[str, str] = {
-        "schema": "schema_definition",
-        "scalar": "scalar_type_definition",
-        "type": "object_type_definition",
-        "interface": "interface_type_definition",
-        "union": "union_type_definition",
-        "enum": "enum_type_definition",
-        "input": "input_object_type_definition",
-        "directive": "directive_definition",
-    }
-
-    def parse_type_system_definition(self) -> TypeSystemDefinitionNode:
-        """TypeSystemDefinition"""
-        # Many definitions begin with a description and require a lookahead.
-        keyword_token = (
-            self._lexer.lookahead() if self.peek_description() else self._lexer.token
-        )
-        method_name = self._parse_type_system_definition_method_names.get(
-            cast(str, keyword_token.value)
-        )
-        if method_name:
-            return getattr(self, f"parse_{method_name}")()
-        raise self.unexpected(keyword_token)
 
     _parse_type_extension_method_names: Dict[str, str] = {
         "schema": "schema_extension",
@@ -603,7 +632,7 @@ class Parser:
         start = self._lexer.token
         description = self.parse_description()
         self.expect_keyword("schema")
-        directives = self.parse_directives(True)
+        directives = self.parse_const_directives()
         operation_types = self.many(
             TokenKind.BRACE_L, self.parse_operation_type_definition, TokenKind.BRACE_R
         )
@@ -630,7 +659,7 @@ class Parser:
         description = self.parse_description()
         self.expect_keyword("scalar")
         name = self.parse_name()
-        directives = self.parse_directives(True)
+        directives = self.parse_const_directives()
         return ScalarTypeDefinitionNode(
             description=description,
             name=name,
@@ -645,7 +674,7 @@ class Parser:
         self.expect_keyword("type")
         name = self.parse_name()
         interfaces = self.parse_implements_interfaces()
-        directives = self.parse_directives(True)
+        directives = self.parse_const_directives()
         fields = self.parse_fields_definition()
         return ObjectTypeDefinitionNode(
             description=description,
@@ -658,10 +687,11 @@ class Parser:
 
     def parse_implements_interfaces(self) -> List[NamedTypeNode]:
         """ImplementsInterfaces"""
-        if not self.expect_optional_keyword("implements"):
-            return []
-
-        return self.delimited_many(TokenKind.AMP, self.parse_named_type)
+        return (
+            self.delimited_many(TokenKind.AMP, self.parse_named_type)
+            if self.expect_optional_keyword("implements")
+            else []
+        )
 
     def parse_fields_definition(self) -> List[FieldDefinitionNode]:
         """FieldsDefinition: {FieldDefinition+}"""
@@ -677,7 +707,7 @@ class Parser:
         args = self.parse_argument_defs()
         self.expect_token(TokenKind.COLON)
         type_ = self.parse_type_reference()
-        directives = self.parse_directives(True)
+        directives = self.parse_const_directives()
         return FieldDefinitionNode(
             description=description,
             name=name,
@@ -701,11 +731,11 @@ class Parser:
         self.expect_token(TokenKind.COLON)
         type_ = self.parse_type_reference()
         default_value = (
-            self.parse_value_literal(True)
+            self.parse_const_value_literal()
             if self.expect_optional_token(TokenKind.EQUALS)
             else None
         )
-        directives = self.parse_directives(True)
+        directives = self.parse_const_directives()
         return InputValueDefinitionNode(
             description=description,
             name=name,
@@ -722,7 +752,7 @@ class Parser:
         self.expect_keyword("interface")
         name = self.parse_name()
         interfaces = self.parse_implements_interfaces()
-        directives = self.parse_directives(True)
+        directives = self.parse_const_directives()
         fields = self.parse_fields_definition()
         return InterfaceTypeDefinitionNode(
             description=description,
@@ -739,7 +769,7 @@ class Parser:
         description = self.parse_description()
         self.expect_keyword("union")
         name = self.parse_name()
-        directives = self.parse_directives(True)
+        directives = self.parse_const_directives()
         types = self.parse_union_member_types()
         return UnionTypeDefinitionNode(
             description=description,
@@ -763,7 +793,7 @@ class Parser:
         description = self.parse_description()
         self.expect_keyword("enum")
         name = self.parse_name()
-        directives = self.parse_directives(True)
+        directives = self.parse_const_directives()
         values = self.parse_enum_values_definition()
         return EnumTypeDefinitionNode(
             description=description,
@@ -783,8 +813,8 @@ class Parser:
         """EnumValueDefinition: Description? EnumValue Directives[Const]?"""
         start = self._lexer.token
         description = self.parse_description()
-        name = self.parse_name()
-        directives = self.parse_directives(True)
+        name = self.parse_enum_value_name()
+        directives = self.parse_const_directives()
         return EnumValueDefinitionNode(
             description=description,
             name=name,
@@ -792,13 +822,24 @@ class Parser:
             loc=self.loc(start),
         )
 
+    def parse_enum_value_name(self) -> NameNode:
+        """EnumValue: Name but not ``true``, ``false`` or ``null``"""
+        if self._lexer.token.value in ("true", "false", "null"):
+            raise GraphQLSyntaxError(
+                self._lexer.source,
+                self._lexer.token.start,
+                f"{get_token_desc(self._lexer.token)} is reserved"
+                " and cannot be used for an enum value.",
+            )
+        return self.parse_name()
+
     def parse_input_object_type_definition(self) -> InputObjectTypeDefinitionNode:
         """InputObjectTypeDefinition"""
         start = self._lexer.token
         description = self.parse_description()
         self.expect_keyword("input")
         name = self.parse_name()
-        directives = self.parse_directives(True)
+        directives = self.parse_const_directives()
         fields = self.parse_input_fields_definition()
         return InputObjectTypeDefinitionNode(
             description=description,
@@ -819,7 +860,7 @@ class Parser:
         start = self._lexer.token
         self.expect_keyword("extend")
         self.expect_keyword("schema")
-        directives = self.parse_directives(True)
+        directives = self.parse_const_directives()
         operation_types = self.optional_many(
             TokenKind.BRACE_L, self.parse_operation_type_definition, TokenKind.BRACE_R
         )
@@ -835,7 +876,7 @@ class Parser:
         self.expect_keyword("extend")
         self.expect_keyword("scalar")
         name = self.parse_name()
-        directives = self.parse_directives(True)
+        directives = self.parse_const_directives()
         if not directives:
             raise self.unexpected()
         return ScalarTypeExtensionNode(
@@ -849,7 +890,7 @@ class Parser:
         self.expect_keyword("type")
         name = self.parse_name()
         interfaces = self.parse_implements_interfaces()
-        directives = self.parse_directives(True)
+        directives = self.parse_const_directives()
         fields = self.parse_fields_definition()
         if not (interfaces or directives or fields):
             raise self.unexpected()
@@ -868,7 +909,7 @@ class Parser:
         self.expect_keyword("interface")
         name = self.parse_name()
         interfaces = self.parse_implements_interfaces()
-        directives = self.parse_directives(True)
+        directives = self.parse_const_directives()
         fields = self.parse_fields_definition()
         if not (interfaces or directives or fields):
             raise self.unexpected()
@@ -886,7 +927,7 @@ class Parser:
         self.expect_keyword("extend")
         self.expect_keyword("union")
         name = self.parse_name()
-        directives = self.parse_directives(True)
+        directives = self.parse_const_directives()
         types = self.parse_union_member_types()
         if not (directives or types):
             raise self.unexpected()
@@ -900,7 +941,7 @@ class Parser:
         self.expect_keyword("extend")
         self.expect_keyword("enum")
         name = self.parse_name()
-        directives = self.parse_directives(True)
+        directives = self.parse_const_directives()
         values = self.parse_enum_values_definition()
         if not (directives or values):
             raise self.unexpected()
@@ -914,7 +955,7 @@ class Parser:
         self.expect_keyword("extend")
         self.expect_keyword("input")
         name = self.parse_name()
-        directives = self.parse_directives(True)
+        directives = self.parse_const_directives()
         fields = self.parse_input_fields_definition()
         if not (directives or fields):
             raise self.unexpected()
@@ -988,18 +1029,18 @@ class Parser:
             f"Expected {get_token_kind_desc(kind)}, found {get_token_desc(token)}.",
         )
 
-    def expect_optional_token(self, kind: TokenKind) -> Optional[Token]:
+    def expect_optional_token(self, kind: TokenKind) -> bool:
         """Expect the next token optionally to be of the given kind.
 
-        If the next token is of the given kind, return that token after advancing the
-        lexer. Otherwise, do not change the parser state and return None.
+        If the next token is of the given kind, return True after advancing the lexer.
+        Otherwise, do not change the parser state and return False.
         """
         token = self._lexer.token
         if token.kind == kind:
             self._lexer.advance()
-            return token
+            return True
 
-        return None
+        return False
 
     def expect_keyword(self, value: str) -> None:
         """Expect the next token to be a given keyword.

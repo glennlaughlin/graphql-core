@@ -20,8 +20,8 @@ def build_ast_schema(
     This takes the ast of a schema document produced by the parse function in
     src/language/parser.py.
 
-    If no schema definition is provided, then it will look for types named Query
-    and Mutation.
+    If no schema definition is provided, then it will look for types named Query,
+    Mutation and Subscription.
 
     Given that AST it constructs a GraphQLSchema. The resulting schema has no
     resolve methods, so execution will use default resolvers.
@@ -44,11 +44,11 @@ def build_ast_schema(
         mutation=None,
         subscription=None,
         description=None,
-        types=[],
-        directives=[],
-        extensions=None,
+        types=(),
+        directives=(),
+        extensions={},
         ast_node=None,
-        extension_ast_nodes=[],
+        extension_ast_nodes=(),
         assume_valid=False,
     )
     schema_kwargs = extend_schema_impl(empty_schema_kwargs, document_ast, assume_valid)
@@ -66,11 +66,15 @@ def build_ast_schema(
             elif type_name == "Subscription":
                 schema_kwargs["subscription"] = type_
 
-    directives = schema_kwargs["directives"]
     # If specified directives were not explicitly declared, add them.
-    for std_directive in specified_directives:
-        if all(directive.name != std_directive.name for directive in directives):
-            directives.append(std_directive)
+    directives = schema_kwargs["directives"]
+    directive_names = set(directive.name for directive in directives)
+    missing_directives = []
+    for directive in specified_directives:
+        if directive.name not in directive_names:
+            missing_directives.append(directive)
+    if missing_directives:
+        schema_kwargs["directives"] = directives + tuple(missing_directives)
 
     return GraphQLSchema(**schema_kwargs)
 
@@ -80,14 +84,14 @@ def build_schema(
     assume_valid: bool = False,
     assume_valid_sdl: bool = False,
     no_location: bool = False,
-    experimental_fragment_variables: bool = False,
+    allow_legacy_fragment_variables: bool = False,
 ) -> GraphQLSchema:
     """Build a GraphQLSchema directly from a source document."""
     return build_ast_schema(
         parse(
             source,
             no_location=no_location,
-            experimental_fragment_variables=experimental_fragment_variables,
+            allow_legacy_fragment_variables=allow_legacy_fragment_variables,
         ),
         assume_valid=assume_valid,
         assume_valid_sdl=assume_valid_sdl,

@@ -7,22 +7,24 @@ from graphql.utilities import build_schema
 from graphql.validation import ValidationRule, SDLValidationRule
 from graphql.validation.validate import validate, validate_sdl
 
+__all__ = [
+    "test_schema",
+    "assert_validation_errors",
+    "assert_sdl_validation_errors",
+]
+
 test_schema = build_schema(
     """
-    interface Being {
-      name(surname: Boolean): String
-    }
-
     interface Mammal {
       mother: Mammal
       father: Mammal
     }
 
-    interface Pet implements Being {
+    interface Pet {
       name(surname: Boolean): String
     }
 
-    interface Canine implements Mammal & Being {
+    interface Canine implements Mammal {
       name(surname: Boolean): String
       mother: Canine
       father: Canine
@@ -34,7 +36,7 @@ test_schema = build_schema(
       DOWN
     }
 
-    type Dog implements Being & Pet & Mammal & Canine {
+    type Dog implements Pet & Mammal & Canine {
       name(surname: Boolean): String
       nickname: String
       barkVolume: Int
@@ -46,7 +48,7 @@ test_schema = build_schema(
       father: Dog
     }
 
-    type Cat implements Being & Pet {
+    type Cat implements Pet {
       name(surname: Boolean): String
       nickname: String
       meows: Boolean
@@ -56,26 +58,11 @@ test_schema = build_schema(
 
     union CatOrDog = Cat | Dog
 
-    interface Intelligent {
-      iq: Int
-    }
-
-    type Human implements Being & Intelligent {
+    type Human {
       name(surname: Boolean): String
       pets: [Pet]
       relatives: [Human]
-      iq: Int
     }
-
-    type Alien implements Being & Intelligent {
-      name(surname: Boolean): String
-      numEyes: Int
-      iq: Int
-    }
-
-    union DogOrHuman = Dog | Human
-
-    union HumanOrAlien = Human | Alien
 
     enum FurColor {
       BROWN
@@ -117,13 +104,10 @@ test_schema = build_schema(
 
     type QueryRoot {
       human(id: ID): Human
-      alien: Alien
       dog: Dog
       cat: Cat
       pet: Pet
       catOrDog: CatOrDog
-      dogOrHuman: DogOrHuman
-      humanOrAlien: HumanOrAlien
       complicatedArgs: ComplicatedArgs
     }
 
@@ -131,14 +115,7 @@ test_schema = build_schema(
       query: QueryRoot
     }
 
-    directive @onQuery on QUERY
-    directive @onMutation on MUTATION
-    directive @onSubscription on SUBSCRIPTION
     directive @onField on FIELD
-    directive @onFragmentDefinition on FRAGMENT_DEFINITION
-    directive @onFragmentSpread on FRAGMENT_SPREAD
-    directive @onInlineFragment on INLINE_FRAGMENT
-    directive @onVariableDefinition on VARIABLE_DEFINITION
     """
 )
 

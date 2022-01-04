@@ -1,7 +1,6 @@
 from operator import attrgetter, itemgetter
 from typing import (
     Any,
-    Callable,
     Collection,
     Dict,
     List,
@@ -12,7 +11,7 @@ from typing import (
     cast,
 )
 
-from ..error import GraphQLError, located_error
+from ..error import GraphQLError
 from ..pyutils import inspect
 from ..language import (
     DirectiveNode,
@@ -20,7 +19,8 @@ from ..language import (
     NamedTypeNode,
     Node,
     OperationType,
-    OperationTypeDefinitionNode,
+    SchemaDefinitionNode,
+    SchemaExtensionNode,
 )
 from .definition import (
     GraphQLEnumType,
@@ -41,9 +41,8 @@ from .definition import (
     is_required_argument,
     is_required_input_field,
 )
-from ..utilities.assert_valid_name import is_valid_name_error
 from ..utilities.type_comparators import is_equal_type, is_type_sub_type_of
-from .directives import is_directive, GraphQLDirective, GraphQLDeprecatedDirective
+from .directives import is_directive, GraphQLDeprecatedDirective
 from .introspection import is_introspection_type
 from .schema import GraphQLSchema, assert_schema
 
@@ -109,10 +108,7 @@ class SchemaValidationContext:
         if nodes and not isinstance(nodes, Node):
             nodes = [node for node in nodes if node]
         nodes = cast(Optional[Collection[Node]], nodes)
-        self.add_error(GraphQLError(message, nodes))
-
-    def add_error(self, error: GraphQLError) -> None:
-        self.errors.append(error)
+        self.errors.append(GraphQLError(message, nodes))
 
     def validate_root_types(self) -> None:
         schema = self.schema
@@ -191,9 +187,12 @@ class SchemaValidationContext:
         except AttributeError:  # pragma: no cover
             pass
         else:
-            error = is_valid_name_error(name)
-            if error:
-                self.add_error(located_error(error, ast_node))
+            if name.startswith("__"):
+                self.report_error(
+                    f"Name {name!r} must not begin with '__',"
+                    " which is reserved by GraphQL introspection.",
+                    ast_node,
+                )
 
     def validate_types(self) -> None:
         validate_input_object_circular_refs = InputObjectCircularRefsValidator(self)
@@ -250,7 +249,7 @@ class SchemaValidationContext:
         if not fields:
             self.report_error(
                 f"Type {type_.name} must define one or more fields.",
-                get_all_nodes(type_),
+                [type_.ast_node, *type_.extension_ast_nodes],
             )
 
         for field_name, field in fields.items():
@@ -337,7 +336,11 @@ class SchemaValidationContext:
                 self.report_error(
                     f"Interface field {iface.name}.{field_name}"
                     f" expected but {type_.name} does not provide it.",
-                    [iface_field.ast_node, *get_all_nodes(type_)],
+                    [
+                        iface_field.ast_node,
+                        type_.ast_node,
+                        *type_.extension_ast_nodes,
+                    ],
                 )
                 continue
 
@@ -420,7 +423,7 @@ class SchemaValidationContext:
         if not member_types:
             self.report_error(
                 f"Union type {union.name} must define one or more member types.",
-                get_all_nodes(union),
+                [union.ast_node, *union.extension_ast_nodes],
             )
 
         included_type_names: Set[str] = set()
@@ -447,18 +450,12 @@ class SchemaValidationContext:
         if not enum_values:
             self.report_error(
                 f"Enum type {enum_type.name} must define one or more values.",
-                get_all_nodes(enum_type),
+                [enum_type.ast_node, *enum_type.extension_ast_nodes],
             )
 
         for value_name, enum_value in enum_values.items():
             # Ensure valid name.
             self.validate_name(enum_value, value_name)
-            if value_name in ("true", "false", "null"):
-                self.report_error(
-                    f"Enum type {enum_type.name} cannot include value:"
-                    f" {value_name}.",
-                    enum_value.ast_node,
-                )
 
     def validate_input_fields(self, input_obj: GraphQLInputObjectType) -> None:
         fields = input_obj.fields
@@ -467,7 +464,7 @@ class SchemaValidationContext:
             self.report_error(
                 f"Input Object type {input_obj.name}"
                 " must define one or more fields.",
-                get_all_nodes(input_obj),
+                [input_obj.ast_node, *input_obj.extension_ast_nodes],
             )
 
         # Ensure the arguments are valid
@@ -498,13 +495,14 @@ class SchemaValidationContext:
 def get_operation_type_node(
     schema: GraphQLSchema, operation: OperationType
 ) -> Optional[Node]:
-    operation_nodes = cast(
-        List[OperationTypeDefinitionNode],
-        get_all_sub_nodes(schema, attrgetter("operation_types")),
-    )
-    for node in operation_nodes:
-        if node.operation == operation:
-            return node.type
+    ast_node: Optional[Union[SchemaDefinitionNode, SchemaExtensionNode]]
+    for ast_node in [schema.ast_node, *(schema.extension_ast_nodes or ())]:
+        if ast_node:
+            operation_types = ast_node.operation_types
+            if operation_types:  # pragma: no cover else
+                for operation_type in operation_types:
+                    if operation_type.operation == operation:
+                        return operation_type.type
     return None
 
 
@@ -560,59 +558,42 @@ class InputObjectCircularRefsValidator:
         del self.field_path_index_by_type_name[name]
 
 
-SDLDefinedObject = Union[
-    GraphQLSchema,
-    GraphQLDirective,
-    GraphQLInterfaceType,
-    GraphQLObjectType,
-    GraphQLInputObjectType,
-    GraphQLUnionType,
-    GraphQLEnumType,
-]
-
-
-def get_all_nodes(obj: SDLDefinedObject) -> List[Node]:
-    node = obj.ast_node
-    nodes: List[Node] = [node] if node else []
-    extension_nodes = getattr(obj, "extension_ast_nodes", None)
-    if extension_nodes:
-        nodes.extend(extension_nodes)
-    return nodes
-
-
-def get_all_sub_nodes(
-    obj: SDLDefinedObject, getter: Callable[[Node], List[Node]]
-) -> List[Node]:
-    result: List[Node] = []
-    for ast_node in get_all_nodes(obj):
-        sub_nodes = getter(ast_node)
-        if sub_nodes:  # pragma: no cover
-            result.extend(sub_nodes)
-    return result
-
-
 def get_all_implements_interface_nodes(
     type_: Union[GraphQLObjectType, GraphQLInterfaceType], iface: GraphQLInterfaceType
 ) -> List[NamedTypeNode]:
-    implements_nodes = cast(
-        List[NamedTypeNode], get_all_sub_nodes(type_, attrgetter("interfaces"))
-    )
-    return [
-        iface_node
-        for iface_node in implements_nodes
-        if iface_node.name.value == iface.name
-    ]
+    ast_node = type_.ast_node
+    nodes = type_.extension_ast_nodes
+    if ast_node is not None:
+        nodes = [ast_node, *nodes]  # type: ignore
+    implements_nodes: List[NamedTypeNode] = []
+    for node in nodes:
+        iface_nodes = node.interfaces
+        if iface_nodes:  # pragma: no cover else
+            implements_nodes.extend(
+                iface_node
+                for iface_node in iface_nodes
+                if iface_node.name.value == iface.name
+            )
+    return implements_nodes
 
 
 def get_union_member_type_nodes(
     union: GraphQLUnionType, type_name: str
-) -> Optional[List[NamedTypeNode]]:
-    union_nodes = cast(
-        List[NamedTypeNode], get_all_sub_nodes(union, attrgetter("types"))
-    )
-    return [
-        union_node for union_node in union_nodes if union_node.name.value == type_name
-    ]
+) -> List[NamedTypeNode]:
+    ast_node = union.ast_node
+    nodes = union.extension_ast_nodes
+    if ast_node is not None:
+        nodes = [ast_node, *nodes]  # type: ignore
+    member_type_nodes: List[NamedTypeNode] = []
+    for node in nodes:
+        type_nodes = node.types
+        if type_nodes:  # pragma: no cover else
+            member_type_nodes.extend(
+                type_node
+                for type_node in type_nodes
+                if type_node.name.value == type_name
+            )
+    return member_type_nodes
 
 
 def get_deprecated_directive_node(

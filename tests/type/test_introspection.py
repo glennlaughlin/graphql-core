@@ -31,7 +31,7 @@ def describe_introspection():
                     {
                         "kind": "OBJECT",
                         "name": "SomeObject",
-                        "specifiedByUrl": None,
+                        "specifiedByURL": None,
                         "fields": [
                             {
                                 "name": "someField",
@@ -53,7 +53,7 @@ def describe_introspection():
                     {
                         "kind": "SCALAR",
                         "name": "String",
-                        "specifiedByUrl": None,
+                        "specifiedByURL": None,
                         "fields": None,
                         "inputFields": None,
                         "interfaces": None,
@@ -63,7 +63,7 @@ def describe_introspection():
                     {
                         "kind": "SCALAR",
                         "name": "Boolean",
-                        "specifiedByUrl": None,
+                        "specifiedByURL": None,
                         "fields": None,
                         "inputFields": None,
                         "interfaces": None,
@@ -73,7 +73,7 @@ def describe_introspection():
                     {
                         "kind": "OBJECT",
                         "name": "__Schema",
-                        "specifiedByUrl": None,
+                        "specifiedByURL": None,
                         "fields": [
                             {
                                 "name": "description",
@@ -178,7 +178,7 @@ def describe_introspection():
                     {
                         "kind": "OBJECT",
                         "name": "__Type",
-                        "specifiedByUrl": None,
+                        "specifiedByURL": None,
                         "fields": [
                             {
                                 "name": "kind",
@@ -218,7 +218,7 @@ def describe_introspection():
                                 "deprecationReason": None,
                             },
                             {
-                                "name": "specifiedByUrl",
+                                "name": "specifiedByURL",
                                 "args": [],
                                 "type": {
                                     "kind": "SCALAR",
@@ -373,7 +373,7 @@ def describe_introspection():
                     {
                         "kind": "ENUM",
                         "name": "__TypeKind",
-                        "specifiedByUrl": None,
+                        "specifiedByURL": None,
                         "fields": None,
                         "inputFields": None,
                         "interfaces": None,
@@ -424,7 +424,7 @@ def describe_introspection():
                     {
                         "kind": "OBJECT",
                         "name": "__Field",
-                        "specifiedByUrl": None,
+                        "specifiedByURL": None,
                         "fields": [
                             {
                                 "name": "name",
@@ -535,7 +535,7 @@ def describe_introspection():
                     {
                         "kind": "OBJECT",
                         "name": "__InputValue",
-                        "specifiedByUrl": None,
+                        "specifiedByURL": None,
                         "fields": [
                             {
                                 "name": "name",
@@ -624,7 +624,7 @@ def describe_introspection():
                     {
                         "kind": "OBJECT",
                         "name": "__EnumValue",
-                        "specifiedByUrl": None,
+                        "specifiedByURL": None,
                         "fields": [
                             {
                                 "name": "name",
@@ -687,7 +687,7 @@ def describe_introspection():
                     {
                         "kind": "OBJECT",
                         "name": "__Directive",
-                        "specifiedByUrl": None,
+                        "specifiedByURL": None,
                         "fields": [
                             {
                                 "name": "name",
@@ -755,7 +755,17 @@ def describe_introspection():
                             },
                             {
                                 "name": "args",
-                                "args": [],
+                                "args": [
+                                    {
+                                        "name": "includeDeprecated",
+                                        "type": {
+                                            "kind": "SCALAR",
+                                            "name": "Boolean",
+                                            "ofType": None,
+                                        },
+                                        "defaultValue": "false",
+                                    }
+                                ],
                                 "type": {
                                     "kind": "NON_NULL",
                                     "name": None,
@@ -785,7 +795,7 @@ def describe_introspection():
                     {
                         "kind": "ENUM",
                         "name": "__DirectiveLocation",
-                        "specifiedByUrl": None,
+                        "specifiedByURL": None,
                         "fields": None,
                         "inputFields": None,
                         "interfaces": None,
@@ -1059,6 +1069,48 @@ def describe_introspection():
                             "defaultValue": "null",
                         },
                     ],
+                }
+            },
+            None,
+        )
+
+    def introspects_any_default_value():
+        schema = build_schema(
+            """
+            input InputObjectWithDefaultValues {
+              a: String = "Emoji: \\u{1F600}"
+              b: Complex = {x: ["abc"], y: 123}
+            }
+
+            input Complex {
+              x: [String]
+              y: Int
+            }
+
+            type Query {
+              someField(someArg: InputObjectWithDefaultValues): String
+            }
+            """
+        )
+
+        source = """
+            {
+              __type(name: "InputObjectWithDefaultValues") {
+                inputFields {
+                  name
+                  defaultValue
+                }
+              }
+            }
+            """
+
+        assert graphql_sync(schema=schema, source=source) == (
+            {
+                "__type": {
+                    "inputFields": [
+                        {"name": "a", "defaultValue": '"Emoji: \U0001f600"'},
+                        {"name": "b", "defaultValue": '{x: ["abc"], y: 123}'},
+                    ]
                 }
             },
             None,
@@ -1496,9 +1548,11 @@ def describe_introspection():
         def type_resolver(_obj, info, _abstract_type):
             assert False, f"Called on {info.parent_type.name}.{info.field_name}"
 
-        graphql_sync(
+        result = graphql_sync(
             schema=schema,
             source=source,
             field_resolver=field_resolver,
             type_resolver=type_resolver,
         )
+
+        assert result.errors is None

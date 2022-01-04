@@ -47,6 +47,7 @@ class VariableUsageVisitor(Visitor):
     usages: List[VariableUsage]
 
     def __init__(self, type_info: TypeInfo):
+        super().__init__()
         self.usages = []
         self._append_usage = self.usages.append
         self._type_info = type_info
@@ -97,10 +98,12 @@ class ASTValidationContext:
     def get_fragment(self, name: str) -> Optional[FragmentDefinitionNode]:
         fragments = self._fragments
         if fragments is None:
-            fragments = {}
-            for statement in self.document.definitions:
-                if isinstance(statement, FragmentDefinitionNode):
-                    fragments[statement.name.value] = statement
+            fragments = {
+                statement.name.value: statement
+                for statement in self.document.definitions
+                if isinstance(statement, FragmentDefinitionNode)
+            }
+
             self._fragments = fragments
         return fragments.get(name)
 

@@ -49,12 +49,14 @@ def describe_validate_supports_full_validation():
         doc = parse(
             """
             query {
-              catOrDog {
-                ... on Cat {
-                  furColor
-                }
-                ... on Dog {
-                  isHouseTrained
+              human {
+                pets {
+                  ... on Cat {
+                    meowsVolume
+                  }
+                  ... on Dog {
+                    barkVolume
+                  }
                 }
               }
             }
@@ -78,34 +80,35 @@ def describe_validate_supports_full_validation():
             {"message": "Cannot query field 'unknown' on type 'QueryRoot'."}
         ]
 
-    # NOTE: experimental
-    def validates_using_a_custom_type_info():
+    def deprecated_validates_using_a_custom_type_info():
         # This TypeInfo will never return a valid field.
-        type_info = TypeInfo(test_schema, lambda *args: None)
+        type_info = TypeInfo(test_schema, None, lambda *args: None)
 
         doc = parse(
             """
             query {
-              catOrDog {
-                ... on Cat {
-                  furColor
-                }
-                ... on Dog {
-                  isHouseTrained
+              human {
+                pets {
+                  ... on Cat {
+                    meowsVolume
+                  }
+                  ... on Dog {
+                    barkVolume
+                  }
                 }
               }
             }
             """
         )
 
-        errors = validate(test_schema, doc, None, type_info)
+        errors = validate(test_schema, doc, None, None, type_info)
 
         assert [error.message for error in errors] == [
-            "Cannot query field 'catOrDog' on type 'QueryRoot'."
-            " Did you mean 'catOrDog'?",
-            "Cannot query field 'furColor' on type 'Cat'. Did you mean 'furColor'?",
-            "Cannot query field 'isHouseTrained' on type 'Dog'."
-            " Did you mean 'isHouseTrained'?",
+            "Cannot query field 'human' on type 'QueryRoot'. Did you mean 'human'?",
+            "Cannot query field 'meowsVolume' on type 'Cat'."
+            " Did you mean 'meowsVolume'?",
+            "Cannot query field 'barkVolume' on type 'Dog'."
+            " Did you mean 'barkVolume'?",
         ]
 
     def validates_using_a_custom_rule():
@@ -155,7 +158,6 @@ def describe_validate_limit_maximum_number_of_validation_errors():
     def _invalid_field_error(field_name: str):
         return {
             "message": f"Cannot query field '{field_name}' on type 'QueryRoot'.",
-            "locations": [],
         }
 
     def when_max_errors_is_equal_to_number_of_errors():
@@ -176,6 +178,22 @@ def describe_validate_limit_maximum_number_of_validation_errors():
                 " Validation aborted."
             },
         ]
+
+    def limits_to_100_when_max_errors_is_not_passed():
+        errors = validate(
+            test_schema,
+            parse(
+                "{" + " ".join(f"unknownField{n}" for n in range(120)) + "}",
+                no_location=True,
+            ),
+        )
+        assert len(errors) == 101
+        assert errors[0] == _invalid_field_error("unknownField0")
+        assert errors[-2] == _invalid_field_error("unknownField99")
+        assert errors[-1] == {
+            "message": "Too many validation errors, error limit reached."
+            " Validation aborted."
+        }
 
     def pass_through_exceptions_from_rules():
         class CustomRule(ValidationRule):

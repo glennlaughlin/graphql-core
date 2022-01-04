@@ -5,7 +5,7 @@ the GraphQL language and type objects.
 """
 
 # Produce the GraphQL query recommended for a full schema introspection.
-from .get_introspection_query import get_introspection_query
+from .get_introspection_query import get_introspection_query, IntrospectionQuery
 
 # Get the target Operation from a Document.
 from .get_operation_ast import get_operation_ast
@@ -23,7 +23,7 @@ from .build_client_schema import build_client_schema
 from .build_ast_schema import build_ast_schema, build_schema
 
 # Extend an existing GraphQLSchema from a parsed GraphQL Schema language AST.
-from .extend_schema import extend_schema, get_description
+from .extend_schema import extend_schema
 
 # Sort a GraphQLSchema.
 from .lexicographic_sort_schema import lexicographic_sort_schema
@@ -81,14 +81,12 @@ from .find_breaking_changes import (
     find_dangerous_changes,
 )
 
-# Report all deprecated usages within a GraphQL document (deprecated).
-from .find_deprecated_usages import find_deprecated_usages
-
 __all__ = [
     "BreakingChange",
     "BreakingChangeType",
     "DangerousChange",
     "DangerousChangeType",
+    "IntrospectionQuery",
     "TypeInfo",
     "TypeInfoVisitor",
     "assert_valid_name",
@@ -102,8 +100,6 @@ __all__ = [
     "extend_schema",
     "find_breaking_changes",
     "find_dangerous_changes",
-    "find_deprecated_usages",
-    "get_description",
     "get_introspection_query",
     "get_operation_ast",
     "get_operation_root_type",

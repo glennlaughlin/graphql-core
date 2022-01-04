@@ -1,5 +1,5 @@
 from math import isnan, nan
-from typing import cast
+from typing import cast, Dict
 
 from pytest import mark, raises
 
@@ -26,7 +26,7 @@ from graphql.language import (
     UnionTypeDefinitionNode,
     UnionTypeExtensionNode,
 )
-from graphql.pyutils import FrozenList, Undefined
+from graphql.pyutils import Undefined
 from graphql.type import (
     GraphQLArgument,
     GraphQLEnumValue,
@@ -46,7 +46,7 @@ from graphql.type import (
 
 ScalarType = GraphQLScalarType("Scalar")
 ObjectType = GraphQLObjectType("Object", {})
-InterfaceType = GraphQLInterfaceType("Interface")
+InterfaceType = GraphQLInterfaceType("Interface", {})
 UnionType = GraphQLUnionType(
     "Union",
     [ObjectType],
@@ -73,9 +73,9 @@ def describe_type_system_scalars():
             "serialize": None,
             "parse_value": None,
             "parse_literal": None,
-            "extensions": None,
+            "extensions": {},
             "ast_node": None,
-            "extension_ast_nodes": [],
+            "extension_ast_nodes": (),
         }
 
     def accepts_a_scalar_type_defining_serialize():
@@ -152,16 +152,9 @@ def describe_type_system_scalars():
             "SomeScalar", ast_node=ast_node, extension_ast_nodes=extension_ast_nodes
         )
         assert scalar.ast_node is ast_node
-        assert isinstance(scalar.extension_ast_nodes, FrozenList)
-        assert scalar.extension_ast_nodes == extension_ast_nodes
-        extension_ast_nodes = scalar.extension_ast_nodes
-        scalar = GraphQLScalarType(
-            "SomeScalar", ast_node=None, extension_ast_nodes=extension_ast_nodes
-        )
-        assert scalar.ast_node is None
-        assert scalar.extension_ast_nodes is extension_ast_nodes
+        assert scalar.extension_ast_nodes == tuple(extension_ast_nodes)
 
-    def rejects_a_scalar_type_without_a_name():
+    def rejects_a_scalar_type_with_incorrectly_typed_name():
         with raises(TypeError, match="missing .* required .* 'name'"):
             # noinspection PyArgumentList
             GraphQLScalarType()  # type: ignore
@@ -170,14 +163,19 @@ def describe_type_system_scalars():
             GraphQLScalarType(None)  # type: ignore
         assert str(exc_info.value) == "Must provide name."
         with raises(TypeError) as exc_info:
-            GraphQLScalarType("")
-        assert str(exc_info.value) == "Must provide name."
-
-    def rejects_a_scalar_type_with_incorrectly_typed_name():
-        with raises(TypeError) as exc_info:
             # noinspection PyTypeChecker
-            GraphQLScalarType(name=42)  # type: ignore
-        assert str(exc_info.value) == "The name must be a string."
+            GraphQLScalarType(42, {})  # type: ignore
+        assert str(exc_info.value) == "Expected name to be a string."
+
+    def rejects_a_scalar_type_with_invalid_name():
+        with raises(GraphQLError) as exc_info:
+            GraphQLScalarType("")
+        assert str(exc_info.value) == "Expected name to be a non-empty string."
+        with raises(GraphQLError) as exc_info:
+            GraphQLScalarType("bad-name")
+        assert str(exc_info.value) == (
+            "Names must only contain [_a-zA-Z0-9] but 'bad-name' does not."
+        )
 
     def rejects_a_scalar_type_with_incorrectly_typed_description():
         with raises(TypeError) as exc_info:
@@ -274,7 +272,7 @@ def describe_type_system_fields():
             "subscribe": None,
             "description": None,
             "deprecation_reason": None,
-            "extensions": None,
+            "extensions": {},
             "ast_node": None,
         }
 
@@ -392,12 +390,10 @@ def describe_type_system_objects():
         assert deprecated_field == GraphQLField(
             ScalarType, deprecation_reason="A terrible reason"
         )
-        assert deprecated_field.is_deprecated is True
         assert deprecated_field.deprecation_reason == "A terrible reason"
 
         deprecated_field = TypeWithDeprecatedField.fields["baz"]
         assert deprecated_field == GraphQLField(ScalarType, deprecation_reason="")
-        assert deprecated_field.is_deprecated is True
         assert deprecated_field.deprecation_reason == ""
 
     def accepts_an_object_type_with_output_type_as_field():
@@ -408,7 +404,7 @@ def describe_type_system_objects():
         assert isinstance(field, GraphQLField)
         assert field.type is ScalarType
         assert field.args == {}
-        assert field.is_deprecated is False
+        assert field.deprecation_reason is None
 
     def accepts_an_object_type_with_a_field_function():
         obj_type = GraphQLObjectType(
@@ -422,9 +418,8 @@ def describe_type_system_objects():
         assert field.args == {}
         assert field.resolve is None
         assert field.subscribe is None
-        assert field.is_deprecated is False
         assert field.deprecation_reason is None
-        assert field.extensions is None
+        assert field.extensions == {}
         assert field.ast_node is None
 
     def thunk_for_fields_of_object_type_is_resolved_only_once():
@@ -458,22 +453,21 @@ def describe_type_system_objects():
         assert arg.type is ScalarType
         assert arg.default_value is Undefined
         assert arg.deprecation_reason is None
-        assert arg.extensions is None
+        assert arg.extensions == {}
         assert arg.ast_node is None
         assert field.resolve is None
         assert field.subscribe is None
-        assert field.is_deprecated is False
         assert field.deprecation_reason is None
-        assert field.extensions is None
+        assert field.extensions == {}
         assert field.ast_node is None
 
     def accepts_an_object_type_with_list_interfaces():
         obj_type = GraphQLObjectType("SomeObject", {}, [InterfaceType])
-        assert obj_type.interfaces == [InterfaceType]
+        assert obj_type.interfaces == (InterfaceType,)
 
     def accepts_object_type_with_interfaces_as_a_function_returning_a_list():
         obj_type = GraphQLObjectType("SomeObject", {}, lambda: [InterfaceType])
-        assert obj_type.interfaces == [InterfaceType]
+        assert obj_type.interfaces == (InterfaceType,)
 
     def thunk_for_interfaces_of_object_type_is_resolved_only_once():
         calls = 0
@@ -484,9 +478,9 @@ def describe_type_system_objects():
             return [InterfaceType]
 
         obj_type = GraphQLObjectType("SomeObject", {}, interfaces)
-        assert obj_type.interfaces == [InterfaceType]
+        assert obj_type.interfaces == (InterfaceType,)
         assert calls == 1
-        assert obj_type.interfaces == [InterfaceType]
+        assert obj_type.interfaces == (InterfaceType,)
         assert calls == 1
 
     def accepts_a_lambda_as_an_object_field_resolver():
@@ -510,19 +504,9 @@ def describe_type_system_objects():
             extension_ast_nodes=extension_ast_nodes,
         )
         assert object_type.ast_node is ast_node
-        assert isinstance(object_type.extension_ast_nodes, FrozenList)
-        assert object_type.extension_ast_nodes == extension_ast_nodes
-        extension_ast_nodes = object_type.extension_ast_nodes
-        object_type = GraphQLObjectType(
-            "SomeObject",
-            {"f": GraphQLField(ScalarType)},
-            ast_node=None,
-            extension_ast_nodes=extension_ast_nodes,
-        )
-        assert object_type.ast_node is None
-        assert object_type.extension_ast_nodes is extension_ast_nodes
+        assert object_type.extension_ast_nodes == tuple(extension_ast_nodes)
 
-    def rejects_an_object_type_without_a_name():
+    def rejects_an_object_type_with_incorrectly_typed_name():
         with raises(TypeError, match="missing .* required .* 'name'"):
             # noinspection PyArgumentList
             GraphQLObjectType()  # type: ignore
@@ -531,15 +515,25 @@ def describe_type_system_objects():
             GraphQLObjectType(None, {})  # type: ignore
         assert str(exc_info.value) == "Must provide name."
         with raises(TypeError) as exc_info:
+            # noinspection PyTypeChecker
+            GraphQLObjectType(42, {})  # type: ignore
+        assert str(exc_info.value) == "Expected name to be a string."
+
+    def rejects_an_object_type_with_invalid_name():
+        with raises(GraphQLError) as exc_info:
             GraphQLObjectType("", {})
-        assert str(exc_info.value) == "Must provide name."
+        assert str(exc_info.value) == "Expected name to be a non-empty string."
+        with raises(GraphQLError) as exc_info:
+            GraphQLObjectType("bad-name", {})
+        assert str(exc_info.value) == (
+            "Names must only contain [_a-zA-Z0-9] but 'bad-name' does not."
+        )
 
     def rejects_an_object_type_field_with_undefined_config():
         undefined_field = cast(GraphQLField, None)
         obj_type = GraphQLObjectType("SomeObject", {"f": undefined_field})
         with raises(TypeError) as exc_info:
-            if obj_type.fields:
-                pass
+            assert not obj_type.fields
         msg = str(exc_info.value)
         assert msg == "SomeObject fields must be GraphQLField or output type objects."
 
@@ -547,20 +541,27 @@ def describe_type_system_objects():
         invalid_field = cast(GraphQLField, [GraphQLField(ScalarType)])
         obj_type = GraphQLObjectType("SomeObject", {"f": invalid_field})
         with raises(TypeError) as exc_info:
-            if obj_type.fields:
-                pass
+            assert not obj_type.fields
         msg = str(exc_info.value)
         assert msg == "SomeObject fields must be GraphQLField or output type objects."
+
+    def rejects_an_object_type_with_incorrectly_named_fields():
+        obj_type = GraphQLObjectType(
+            "SomeObject", {"bad-name": GraphQLField(ScalarType)}
+        )
+        with raises(GraphQLError) as exc_info:
+            assert not obj_type.fields
+        msg = str(exc_info.value)
+        assert msg == "Names must only contain [_a-zA-Z0-9] but 'bad-name' does not."
 
     def rejects_an_object_type_field_function_that_returns_incorrect_type():
         obj_type = GraphQLObjectType(
             "SomeObject", lambda: [GraphQLField(ScalarType)]  # type: ignore
         )
         with raises(TypeError) as exc_info:
-            if obj_type.fields:
-                pass
+            assert not obj_type.fields
         assert str(exc_info.value) == (
-            "SomeObject fields must be specified as a dict with field names as keys."
+            "SomeObject fields must be specified as a mapping with field names as keys."
         )
 
     def rejects_an_object_type_field_function_that_raises_an_error():
@@ -569,8 +570,7 @@ def describe_type_system_objects():
 
         obj_type = GraphQLObjectType("SomeObject", fields)
         with raises(TypeError) as exc_info:
-            if obj_type.fields:
-                pass
+            assert not obj_type.fields
         assert str(exc_info.value) == "SomeObject fields cannot be resolved. Oops!"
 
     def rejects_an_object_type_with_incorrectly_typed_field_args():
@@ -588,21 +588,27 @@ def describe_type_system_objects():
         msg = str(exc_info.value)
         assert msg == "Field args must be a dict with argument names as keys."
 
-    def rejects_an_object_with_is_deprecated_instead_of_deprecation_reason_on_field():
-        kwargs = dict(is_deprecated=True)
-        with raises(
-            TypeError, match="got an unexpected keyword argument 'is_deprecated'"
-        ):
-            GraphQLObjectType(
-                "OldObject",
-                {"field": GraphQLField(ScalarType, **kwargs)},  # type: ignore
-            )
+    def rejects_an_object_type_with_incorrectly_named_field_args():
+        obj_type = GraphQLObjectType(
+            "SomeObject",
+            lambda: {
+                "badField": GraphQLField(
+                    ScalarType, args={"bad-name": GraphQLArgument(ScalarType)}
+                )
+            },
+        )
+        with raises(GraphQLError) as exc_info:
+            assert not obj_type.fields
+        msg = str(exc_info.value)
+        assert msg == (
+            "SomeObject fields cannot be resolved."
+            " Names must only contain [_a-zA-Z0-9] but 'bad-name' does not."
+        )
 
     def rejects_an_object_type_with_incorrectly_typed_interfaces():
         obj_type = GraphQLObjectType("SomeObject", {}, interfaces={})
         with raises(TypeError) as exc_info:
-            if obj_type.interfaces:
-                pass
+            assert not obj_type.interfaces
         assert str(exc_info.value) == (
             "SomeObject interfaces must be specified"
             " as a collection of GraphQLInterfaceType instances."
@@ -611,8 +617,7 @@ def describe_type_system_objects():
     def rejects_object_type_with_incorrectly_typed_interfaces_as_a_function():
         obj_type = GraphQLObjectType("SomeObject", {}, interfaces=lambda: {})
         with raises(TypeError) as exc_info:
-            if obj_type.interfaces:
-                pass
+            assert not obj_type.interfaces
         assert str(exc_info.value) == (
             "SomeObject interfaces must be specified"
             " as a collection of GraphQLInterfaceType instances."
@@ -624,8 +629,7 @@ def describe_type_system_objects():
 
         obj_type = GraphQLObjectType("SomeObject", {}, interfaces=interfaces)
         with raises(TypeError) as exc_info:
-            if obj_type.interfaces:
-                pass
+            assert not obj_type.interfaces
         assert str(exc_info.value) == "SomeObject interfaces cannot be resolved. Oops!"
 
     def rejects_an_empty_object_field_resolver():
@@ -701,17 +705,17 @@ def describe_type_system_interfaces():
         assert interface.fields == fields
         assert interface.fields is not fields
         assert interface.resolve_type is None
-        assert interface.extensions is None
+        assert interface.extensions == {}
         kwargs = interface.to_kwargs()
         assert kwargs == {
             "name": "AnotherInterface",
             "description": None,
             "fields": fields,
-            "interfaces": [],
+            "interfaces": (),
             "resolve_type": None,
-            "extensions": None,
+            "extensions": {},
             "ast_node": None,
-            "extension_ast_nodes": [],
+            "extension_ast_nodes": (),
         }
 
     def accepts_an_interface_type_defining_resolve_type():
@@ -757,13 +761,13 @@ def describe_type_system_interfaces():
         implementing = GraphQLInterfaceType(
             "AnotherInterface", {}, interfaces=[InterfaceType]
         )
-        assert implementing.interfaces == [InterfaceType]
+        assert implementing.interfaces == (InterfaceType,)
 
     def accepts_an_interface_type_with_an_interfaces_function():
         implementing = GraphQLInterfaceType(
             "AnotherInterface", {}, interfaces=lambda: [InterfaceType]
         )
-        assert implementing.interfaces == [InterfaceType]
+        assert implementing.interfaces == (InterfaceType,)
 
     def thunk_for_interfaces_of_interface_type_is_resolved_only_once():
         calls = 0
@@ -776,9 +780,9 @@ def describe_type_system_interfaces():
         implementing = GraphQLInterfaceType(
             "AnotherInterface", {}, interfaces=interfaces
         )
-        assert implementing.interfaces == [InterfaceType]
+        assert implementing.interfaces == (InterfaceType,)
         assert calls == 1
-        assert implementing.interfaces == [InterfaceType]
+        assert implementing.interfaces == (InterfaceType,)
         assert calls == 1
 
     def accepts_an_interface_type_with_ast_node_and_extension_ast_nodes():
@@ -791,32 +795,21 @@ def describe_type_system_interfaces():
             extension_ast_nodes=extension_ast_nodes,
         )
         assert interface_type.ast_node is ast_node
-        assert isinstance(interface_type.extension_ast_nodes, FrozenList)
-        assert interface_type.extension_ast_nodes == extension_ast_nodes
-        extension_ast_nodes = interface_type.extension_ast_nodes
-        interface_type = GraphQLInterfaceType(
-            "SomeInterface",
-            {"f": GraphQLField(ScalarType)},
-            ast_node=None,
-            extension_ast_nodes=extension_ast_nodes,
-        )
-        assert interface_type.ast_node is None
-        assert interface_type.extension_ast_nodes is extension_ast_nodes
+        assert interface_type.extension_ast_nodes == tuple(extension_ast_nodes)
 
     def rejects_an_interface_type_with_incorrectly_typed_fields():
         interface = GraphQLInterfaceType("SomeInterface", [])  # type: ignore
         with raises(TypeError) as exc_info:
-            if interface.fields:
-                pass
+            assert not interface.fields
         assert str(exc_info.value) == (
-            "SomeInterface fields must be specified as a dict with field names as keys."
+            "SomeInterface fields must be specified"
+            " as a mapping with field names as keys."
         )
         interface = GraphQLInterfaceType(
             "SomeInterface", {"f": InputObjectType}  # type: ignore
         )
         with raises(TypeError) as exc_info:
-            if interface.fields:
-                pass
+            assert not interface.fields
         assert str(exc_info.value) == (
             "SomeInterface fields must be GraphQLField or output type objects."
         )
@@ -827,27 +820,36 @@ def describe_type_system_interfaces():
 
         interface = GraphQLInterfaceType("SomeInterface", fields)
         with raises(TypeError) as exc_info:
-            if interface.fields:
-                pass
+            assert not interface.fields
         assert str(exc_info.value) == "SomeInterface fields cannot be resolved. Oops!"
 
-    def rejects_an_interface_type_without_a_name():
+    def rejects_an_interface_type_with_incorrectly_typed_name():
         with raises(TypeError, match="missing .* required .* 'name'"):
             # noinspection PyArgumentList
             GraphQLInterfaceType()  # type: ignore
         with raises(TypeError) as exc_info:
             # noinspection PyTypeChecker
-            GraphQLInterfaceType(None)  # type: ignore
+            GraphQLInterfaceType(None, {})  # type: ignore
         assert str(exc_info.value) == "Must provide name."
         with raises(TypeError) as exc_info:
-            GraphQLInterfaceType("")
-        assert str(exc_info.value) == "Must provide name."
+            # noinspection PyTypeChecker
+            GraphQLInterfaceType(42, {})  # type: ignore
+        assert str(exc_info.value) == "Expected name to be a string."
+
+    def rejects_an_interface_type_with_invalid_name():
+        with raises(GraphQLError) as exc_info:
+            GraphQLInterfaceType("", {})
+        assert str(exc_info.value) == "Expected name to be a non-empty string."
+        with raises(GraphQLError) as exc_info:
+            GraphQLInterfaceType("bad-name", {})
+        assert str(exc_info.value) == (
+            "Names must only contain [_a-zA-Z0-9] but 'bad-name' does not."
+        )
 
     def rejects_an_interface_type_with_incorrectly_typed_interfaces():
         interface = GraphQLInterfaceType("AnotherInterface", {}, lambda: {})
         with raises(TypeError) as exc_info:
-            if interface.interfaces:
-                pass
+            assert not interface.interfaces
         assert str(exc_info.value) == (
             "AnotherInterface interfaces must be specified"
             " as a collection of GraphQLInterfaceType instances."
@@ -859,8 +861,7 @@ def describe_type_system_interfaces():
 
         interface = GraphQLInterfaceType("AnotherInterface", {}, interfaces)
         with raises(TypeError) as exc_info:
-            if interface.interfaces:
-                pass
+            assert not interface.interfaces
         assert (
             str(exc_info.value)
             == "AnotherInterface interfaces cannot be resolved. Oops!"
@@ -880,13 +881,13 @@ def describe_type_system_interfaces():
     def rejects_an_interface_type_with_an_incorrect_ast_node():
         with raises(TypeError) as exc_info:
             # noinspection PyTypeChecker
-            GraphQLInterfaceType("SomeInterface", ast_node=Node())  # type: ignore
+            GraphQLInterfaceType("SomeInterface", {}, ast_node=Node())  # type: ignore
         msg = str(exc_info.value)
         assert msg == "SomeInterface AST node must be a TypeDefinitionNode."
         with raises(TypeError) as exc_info:
             # noinspection PyTypeChecker
             GraphQLInterfaceType(
-                "SomeInterface", ast_node=TypeDefinitionNode()  # type: ignore
+                "SomeInterface", {}, ast_node=TypeDefinitionNode()  # type: ignore
             )
         msg = str(exc_info.value)
         assert msg == "SomeInterface AST node must be an InterfaceTypeDefinitionNode."
@@ -895,7 +896,7 @@ def describe_type_system_interfaces():
         with raises(TypeError) as exc_info:
             # noinspection PyTypeChecker
             GraphQLInterfaceType(
-                "SomeInterface", extension_ast_nodes=[Node()]  # type: ignore
+                "SomeInterface", {}, extension_ast_nodes=[Node()]  # type: ignore
             )
         assert str(exc_info.value) == (
             "SomeInterface extension AST nodes must be specified"
@@ -905,6 +906,7 @@ def describe_type_system_interfaces():
             # noinspection PyTypeChecker
             GraphQLInterfaceType(
                 "SomeInterface",
+                {},
                 extension_ast_nodes=[TypeExtensionNode()],  # type: ignore
             )
         assert str(exc_info.value) == (
@@ -919,20 +921,20 @@ def describe_type_system_unions():
 
     def accepts_a_union_type_with_list_types():
         union_type = GraphQLUnionType("SomeUnion", [ObjectType])
-        assert union_type.types == [ObjectType]
+        assert union_type.types == (ObjectType,)
 
     def accepts_a_union_type_with_function_returning_a_list_of_types():
         union_type = GraphQLUnionType("SomeUnion", lambda: [ObjectType])
-        assert union_type.types == [ObjectType]
+        assert union_type.types == (ObjectType,)
 
     def accepts_a_union_type_without_types():
         with raises(TypeError, match="missing 1 required positional argument: 'types'"):
             # noinspection PyArgumentList
             GraphQLUnionType("SomeUnion")  # type: ignore
         union_type = GraphQLUnionType("SomeUnion", None)  # type: ignore
-        assert union_type.types == []
+        assert union_type.types == ()
         union_type = GraphQLUnionType("SomeUnion", [])
-        assert union_type.types == []
+        assert union_type.types == ()
 
     def accepts_a_union_type_with_ast_node_and_extension_ast_nodes():
         ast_node = UnionTypeDefinitionNode()
@@ -944,19 +946,9 @@ def describe_type_system_unions():
             extension_ast_nodes=extension_ast_nodes,
         )
         assert union_type.ast_node is ast_node
-        assert isinstance(union_type.extension_ast_nodes, FrozenList)
-        assert union_type.extension_ast_nodes == extension_ast_nodes
-        extension_ast_nodes = union_type.extension_ast_nodes
-        union_type = GraphQLUnionType(
-            "SomeUnion",
-            [ObjectType],
-            ast_node=None,
-            extension_ast_nodes=extension_ast_nodes,
-        )
-        assert union_type.ast_node is None
-        assert union_type.extension_ast_nodes is extension_ast_nodes
+        assert union_type.extension_ast_nodes == tuple(extension_ast_nodes)
 
-    def rejects_a_union_type_without_a_name():
+    def rejects_a_union_type_with_incorrectly_typed__name():
         with raises(TypeError, match="missing .* required .* 'name'"):
             # noinspection PyArgumentList
             GraphQLUnionType()  # type: ignore
@@ -965,8 +957,19 @@ def describe_type_system_unions():
             GraphQLUnionType(None, [])  # type: ignore
         assert str(exc_info.value) == "Must provide name."
         with raises(TypeError) as exc_info:
+            # noinspection PyTypeChecker
+            GraphQLUnionType(42, [])  # type: ignore
+        assert str(exc_info.value) == "Expected name to be a string."
+
+    def rejects_a_union_type_with_invalid_name():
+        with raises(GraphQLError) as exc_info:
             GraphQLUnionType("", [])
-        assert str(exc_info.value) == "Must provide name."
+        assert str(exc_info.value) == "Expected name to be a non-empty string."
+        with raises(GraphQLError) as exc_info:
+            GraphQLUnionType("bad-name", [])
+        assert str(exc_info.value) == (
+            "Names must only contain [_a-zA-Z0-9] but 'bad-name' does not."
+        )
 
     def rejects_a_union_type_with_an_incorrect_type_for_resolve_type():
         with raises(TypeError) as exc_info:
@@ -979,8 +982,7 @@ def describe_type_system_unions():
     def rejects_a_union_type_with_incorrectly_typed_types():
         union_type = GraphQLUnionType("SomeUnion", {"type": ObjectType})  # type: ignore
         with raises(TypeError) as exc_info:
-            if union_type.types:
-                pass
+            assert not union_type.types
         assert str(exc_info.value) == (
             "SomeUnion types must be specified"
             " as a collection of GraphQLObjectType instances."
@@ -992,8 +994,7 @@ def describe_type_system_unions():
 
         union_type = GraphQLUnionType("SomeUnion", types)
         with raises(TypeError) as exc_info:
-            if union_type.types:
-                pass
+            assert not union_type.types
         assert str(exc_info.value) == "SomeUnion types cannot be resolved. Oops!"
 
     def rejects_a_union_type_with_an_incorrect_ast_node():
@@ -1050,10 +1051,9 @@ def describe_type_system_enums():
 
         deprecated_value = EnumTypeWithDeprecatedValue.values["foo"]
         assert deprecated_value == GraphQLEnumValue(deprecation_reason="Just because")
-        assert deprecated_value.is_deprecated is True
         assert deprecated_value.deprecation_reason == "Just because"
         assert deprecated_value.value is None
-        assert deprecated_value.extensions is None
+        assert deprecated_value.extensions == {}
         assert deprecated_value.ast_node is None
 
     def defines_an_enum_type_with_a_value_of_none_and_invalid():
@@ -1070,23 +1070,20 @@ def describe_type_system_enums():
         null_value = EnumTypeWithNullishValue.values["NULL"]
         assert null_value.description is None
         assert null_value.value is None
-        assert null_value.is_deprecated is False
         assert null_value.deprecation_reason is None
-        assert null_value.extensions is None
+        assert null_value.extensions == {}
         assert null_value.ast_node is None
         null_value = EnumTypeWithNullishValue.values["NAN"]
         assert null_value.description is None
         assert isnan(null_value.value)
-        assert null_value.is_deprecated is False
         assert null_value.deprecation_reason is None
-        assert null_value.extensions is None
+        assert null_value.extensions == {}
         assert null_value.ast_node is None
         no_custom_value = EnumTypeWithNullishValue.values["NO_CUSTOM_VALUE"]
         assert no_custom_value.description is None
         assert no_custom_value.value is Undefined
-        assert no_custom_value.is_deprecated is False
         assert no_custom_value.deprecation_reason is None
-        assert no_custom_value.extensions is None
+        assert no_custom_value.extensions == {}
         assert no_custom_value.ast_node is None
 
     def accepts_a_well_defined_enum_type_with_empty_value_definition():
@@ -1197,35 +1194,37 @@ def describe_type_system_enums():
             extension_ast_nodes=extension_ast_nodes,
         )
         assert enum_type.ast_node is ast_node
-        assert isinstance(enum_type.extension_ast_nodes, FrozenList)
-        assert enum_type.extension_ast_nodes == extension_ast_nodes
-        extension_ast_nodes = enum_type.extension_ast_nodes
-        enum_type = GraphQLEnumType(
-            "SomeEnum",
-            {},  # type: ignore
-            ast_node=None,
-            extension_ast_nodes=extension_ast_nodes,
-        )
-        assert enum_type.ast_node is None
-        assert enum_type.extension_ast_nodes is extension_ast_nodes
-
-    def rejects_an_enum_type_without_a_name():
-        with raises(TypeError, match="missing .* required .* 'name'"):
-            # noinspection PyArgumentList
-            GraphQLEnumType(values={})  # type: ignore
-        with raises(TypeError) as exc_info:
-            # noinspection PyTypeChecker
-            GraphQLEnumType(None, values={})  # type: ignore
-        assert str(exc_info.value) == "Must provide name."
-        with raises(TypeError) as exc_info:
-            GraphQLEnumType("", values={})  # type: ignore
-        assert str(exc_info.value) == "Must provide name."
+        assert enum_type.extension_ast_nodes == tuple(extension_ast_nodes)
 
     def rejects_an_enum_type_with_incorrectly_typed_name():
+        with raises(TypeError, match="missing .* required .* 'name'"):
+            # noinspection PyArgumentList
+            GraphQLEnumType()  # type: ignore
         with raises(TypeError) as exc_info:
             # noinspection PyTypeChecker
-            GraphQLEnumType(name=42, values={})  # type: ignore
-        assert str(exc_info.value) == "The name must be a string."
+            GraphQLEnumType(None, {})  # type: ignore
+        assert str(exc_info.value) == "Must provide name."
+        with raises(TypeError) as exc_info:
+            # noinspection PyTypeChecker
+            GraphQLEnumType(42, {})  # type: ignore
+        assert str(exc_info.value) == "Expected name to be a string."
+
+    def rejects_an_enum_type_with_invalid_name():
+        values: Dict[str, GraphQLEnumValue] = {}
+        with raises(GraphQLError) as exc_info:
+            GraphQLEnumType("", values)
+        assert str(exc_info.value) == "Expected name to be a non-empty string."
+        with raises(GraphQLError) as exc_info:
+            GraphQLEnumType("bad-name", values)
+        assert str(exc_info.value) == (
+            "Names must only contain [_a-zA-Z0-9] but 'bad-name' does not."
+        )
+
+    def rejects_an_enum_type_with_incorrectly_named_values():
+        with raises(GraphQLError) as exc_info:
+            GraphQLEnumType("SomeEnum", {"bad-name": GraphQLField(ScalarType)})
+        msg = str(exc_info.value)
+        assert msg == "Names must only contain [_a-zA-Z0-9] but 'bad-name' does not."
 
     def rejects_an_enum_type_without_values():
         with raises(TypeError, match="missing .* required .* 'values'"):
@@ -1235,7 +1234,7 @@ def describe_type_system_enums():
             # noinspection PyTypeChecker
             GraphQLEnumType("SomeEnum", values=None)  # type: ignore
         assert str(exc_info.value) == (
-            "SomeEnum values must be an Enum or a dict with value names as keys."
+            "SomeEnum values must be an Enum or a mapping with value names as keys."
         )
 
     def rejects_an_enum_type_with_incorrectly_typed_values():
@@ -1243,18 +1242,8 @@ def describe_type_system_enums():
             # noinspection PyTypeChecker
             GraphQLEnumType("SomeEnum", [{"FOO": 10}])  # type: ignore
         assert str(exc_info.value) == (
-            "SomeEnum values must be an Enum or a dict with value names as keys."
+            "SomeEnum values must be an Enum or a mapping with value names as keys."
         )
-
-    def does_not_allow_is_deprecated_instead_of_deprecation_reason_on_enum():
-        with raises(
-            TypeError, match="got an unexpected keyword argument 'is_deprecated'"
-        ):
-            # noinspection PyArgumentList
-            GraphQLEnumType(
-                "SomeEnum",
-                {"FOO": GraphQLEnumValue(is_deprecated=True)},  # type: ignore
-            )
 
     def rejects_an_enum_type_with_an_incorrectly_typed_description():
         with raises(TypeError) as exc_info:
@@ -1390,17 +1379,7 @@ def describe_type_system_input_objects():
             extension_ast_nodes=extension_ast_nodes,
         )
         assert input_obj_type.ast_node is ast_node
-        assert isinstance(input_obj_type.extension_ast_nodes, FrozenList)
-        assert input_obj_type.extension_ast_nodes == extension_ast_nodes
-        extension_ast_nodes = input_obj_type.extension_ast_nodes
-        input_obj_type = GraphQLInputObjectType(
-            "SomeInputObject",
-            {},
-            ast_node=None,
-            extension_ast_nodes=extension_ast_nodes,
-        )
-        assert input_obj_type.ast_node is None
-        assert input_obj_type.extension_ast_nodes is extension_ast_nodes
+        assert input_obj_type.extension_ast_nodes == tuple(extension_ast_nodes)
 
     def rejects_an_input_object_type_with_incorrect_out_type_function():
         with raises(TypeError) as exc_info:
@@ -1470,7 +1449,7 @@ def describe_type_system_input_objects():
             assert input_field.type is ScalarType
             assert input_field.default_value is Undefined
             assert input_field.deprecation_reason is None
-            assert input_field.extensions is None
+            assert input_field.extensions == {}
             assert input_field.ast_node is None
             assert input_field.out_name is None
 
@@ -1494,11 +1473,11 @@ def describe_type_system_input_objects():
             assert input_field.type is ScalarType
             assert input_field.default_value is Undefined
             assert input_field.deprecation_reason is None
-            assert input_field.extensions is None
+            assert input_field.extensions == {}
             assert input_field.ast_node is None
             assert input_field.out_name is None
 
-        def rejects_an_input_object_type_without_a_name():
+        def rejects_an_input_object_type_with_incorrectly_typed_name():
             with raises(TypeError, match="missing .* required .* 'name'"):
                 # noinspection PyArgumentList
                 GraphQLInputObjectType()  # type: ignore
@@ -1507,19 +1486,29 @@ def describe_type_system_input_objects():
                 GraphQLInputObjectType(None, {})  # type: ignore
             assert str(exc_info.value) == "Must provide name."
             with raises(TypeError) as exc_info:
+                # noinspection PyTypeChecker
+                GraphQLInputObjectType(42, {})  # type: ignore
+            assert str(exc_info.value) == "Expected name to be a string."
+
+        def rejects_an_input_object_type_with_invalid_name():
+            with raises(GraphQLError) as exc_info:
                 GraphQLInputObjectType("", {})
-            assert str(exc_info.value) == "Must provide name."
+            assert str(exc_info.value) == "Expected name to be a non-empty string."
+            with raises(GraphQLError) as exc_info:
+                GraphQLInputObjectType("bad-name", {})
+            assert str(exc_info.value) == (
+                "Names must only contain [_a-zA-Z0-9] but 'bad-name' does not."
+            )
 
         def rejects_an_input_object_type_with_incorrect_fields():
             input_obj_type = GraphQLInputObjectType(
                 "SomeInputObject", []  # type: ignore
             )
             with raises(TypeError) as exc_info:
-                if input_obj_type.fields:
-                    pass
+                assert not input_obj_type.fields
             assert str(exc_info.value) == (
                 "SomeInputObject fields must be specified"
-                " as a dict with field names as keys."
+                " as a mapping with field names as keys."
             )
 
         def rejects_an_input_object_type_with_incorrect_fields_function():
@@ -1527,11 +1516,21 @@ def describe_type_system_input_objects():
                 "SomeInputObject", lambda: []  # type: ignore
             )
             with raises(TypeError) as exc_info:
-                if input_obj_type.fields:
-                    pass
+                assert not input_obj_type.fields
             assert str(exc_info.value) == (
                 "SomeInputObject fields must be specified"
-                " as a dict with field names as keys."
+                " as a mapping with field names as keys."
+            )
+
+        def rejects_an_input_object_type_with_incorrectly_named_fields():
+            input_obj_type = GraphQLInputObjectType(
+                "SomeInputObject", {"bad-name": GraphQLInputField(ScalarType)}
+            )
+            with raises(GraphQLError) as exc_info:
+                assert not input_obj_type.fields
+            msg = str(exc_info.value)
+            assert msg == (
+                "Names must only contain [_a-zA-Z0-9] but 'bad-name' does not."
             )
 
         def rejects_an_input_object_type_with_unresolvable_fields():
@@ -1540,8 +1539,7 @@ def describe_type_system_input_objects():
 
             input_obj_type = GraphQLInputObjectType("SomeInputObject", fields)
             with raises(TypeError) as exc_info:
-                if input_obj_type.fields:
-                    pass
+                assert not input_obj_type.fields
             assert str(exc_info.value) == (
                 "SomeInputObject fields cannot be resolved. Oops!"
             )
@@ -1569,8 +1567,7 @@ def describe_type_system_input_objects():
                 {"f": GraphQLField(ScalarType, resolve=resolve)},  # type: ignore
             )
             with raises(TypeError) as exc_info:
-                if input_obj_type.fields:
-                    pass
+                assert not input_obj_type.fields
             assert str(exc_info.value) == (
                 "SomeInputObject fields must be GraphQLInputField"
                 " or input type objects."
@@ -1715,6 +1712,23 @@ def describe_type_system_input_fields():
             GraphQLInputField(GraphQLString, ast_node=Node())  # type: ignore
         msg = str(exc_info.value)
         assert msg == "Input field AST node must be an InputValueDefinitionNode."
+
+    def deprecation_reason_is_preserved_on_fields():
+        input_obj_type = GraphQLInputObjectType(
+            "someInputObject",
+            {
+                "deprecatedField": GraphQLInputField(
+                    ScalarType, deprecation_reason="not used anymore"
+                )
+            },
+        )
+        deprecated_field = input_obj_type.fields["deprecatedField"]
+        assert (
+            input_obj_type.to_kwargs()["fields"]["deprecatedField"] is deprecated_field
+        )
+        deprecation_reason = deprecated_field.deprecation_reason
+        assert deprecation_reason == "not used anymore"
+        assert deprecated_field.to_kwargs()["deprecation_reason"] is deprecation_reason
 
 
 def describe_type_system_list():

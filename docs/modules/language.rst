@@ -17,6 +17,12 @@ Each kind of AST node has its own class:
 
 .. autoclass:: ArgumentNode
 .. autoclass:: BooleanValueNode
+.. autoclass:: ConstArgumentNode
+.. autoclass:: ConstDirectiveNode
+.. autoclass:: ConstListValueNode
+.. autoclass:: ConstObjectFieldNode
+.. autoclass:: ConstObjectValueNode
+.. autoclass:: ConstValueNode
 .. autoclass:: DefinitionNode
 .. autoclass:: DirectiveDefinitionNode
 .. autoclass:: DirectiveNode
@@ -73,6 +79,19 @@ Directive locations are specified using the following enumeration:
 
 .. autoclass:: DirectiveLocation
 
+You can also check the type of nodes with the following predicates:
+
+.. autofunction:: is_definition_node
+.. autofunction:: is_executable_definition_node
+.. autofunction:: is_selection_node
+.. autofunction:: is_value_node
+.. autofunction:: is_const_value_node
+.. autofunction:: is_type_node
+.. autofunction:: is_type_system_definition_node
+.. autofunction:: is_type_definition_node
+.. autofunction:: is_type_system_extension_node
+.. autofunction:: is_type_extension_node
+
 Lexer
 -----
 
@@ -86,6 +105,9 @@ Location
 .. autofunction:: get_location
 .. autoclass:: SourceLocation
 .. autofunction:: print_location
+.. autoclass:: FormattedSourceLocation
+   :no-inherited-members:
+
 
 Parser
 ------
@@ -93,6 +115,12 @@ Parser
 .. autofunction:: parse
 .. autofunction:: parse_type
 .. autofunction:: parse_value
+.. autofunction:: parse_const_value
+
+Printer
+-------
+
+.. autofunction:: print_ast
 
 Source
 ------

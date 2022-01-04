@@ -10,6 +10,11 @@ from enum import Enum
 from inspect import isawaitable
 from typing import Any, Dict, List, NamedTuple, Optional
 
+try:
+    from asyncio import create_task
+except ImportError:  # Python < 3.7
+    create_task = None  # type: ignore
+
 from pytest import fixture, mark
 
 from graphql import (
@@ -31,7 +36,7 @@ from graphql import (
 )
 
 from graphql.pyutils import SimplePubSub, SimplePubSubIterator
-from graphql.subscription.map_async_iterator import MapAsyncIterator
+from graphql.execution.map_async_iterator import MapAsyncIterator
 
 
 class User(NamedTuple):
@@ -495,18 +500,20 @@ def describe_subscription():
         async def receive_one():
             async for result in subscription_one:  # type: ignore
                 received_one.append(result)
-                if len(received_one) == 3:
+                if len(received_one) == 3:  # pragma: no cover else
                     break
 
         async def receive_all():
             async for result in subscription_all:  # type: ignore
                 received_all.append(result)
-                if len(received_all) == 6:
+                if len(received_all) == 6:  # pragma: no cover else
                     break
 
-        done, pending = await wait(
-            [mutate_users(), receive_one(), receive_all()], timeout=1
-        )
+        tasks = [
+            create_task(task()) if create_task else task()
+            for task in (mutate_users, receive_one, receive_all)
+        ]
+        done, pending = await wait(tasks, timeout=1)
         assert not pending
 
         expected_data: List[Dict[str, Any]] = [

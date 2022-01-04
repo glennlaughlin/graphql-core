@@ -15,16 +15,20 @@ from graphql.language import (
     NamedTypeNode,
     NonNullTypeNode,
     NullValueNode,
+    ObjectFieldNode,
+    ObjectValueNode,
     OperationDefinitionNode,
     OperationType,
     SelectionSetNode,
     StringValueNode,
     ValueNode,
+    VariableNode,
     Token,
     TokenKind,
     parse,
     parse_type,
     parse_value,
+    parse_const_value,
     Source,
 )
 from graphql.pyutils import inspect
@@ -52,7 +56,7 @@ def describe_parser():
         assert error.message == "Syntax Error: Expected Name, found <EOF>."
         assert error.positions == [1]
         assert error.locations == [(1, 2)]
-        assert str(error) + "\n" == dedent(
+        assert str(error) == dedent(
             """
             Syntax Error: Expected Name, found <EOF>.
 
@@ -77,7 +81,7 @@ def describe_parser():
         with raises(GraphQLSyntaxError) as exc_info:
             parse(Source("query", "MyQuery.graphql"))
         error = exc_info.value
-        assert str(error) + "\n" == dedent(
+        assert str(error) == dedent(
             """
             Syntax Error: Expected '{', found <EOF>.
 
@@ -93,7 +97,7 @@ def describe_parser():
     def parses_constant_default_values():
         assert_syntax_error(
             "query Foo($x: Complex = { a: { b: [ $var ] } }) { field }",
-            "Unexpected '$'.",
+            "Unexpected variable '$var' in constant value.",
             (1, 37),
         )
 
@@ -108,6 +112,23 @@ def describe_parser():
     def does_not_accept_fragments_spread_of_on():
         assert_syntax_error("{ ...on }", "Expected Name, found '}'.", (1, 9))
 
+    def does_not_allow_true_false_or_null_as_enum_value():
+        assert_syntax_error(
+            "enum Test { VALID, true }",
+            "Name 'true' is reserved and cannot be used for an enum value.",
+            (1, 20),
+        )
+        assert_syntax_error(
+            "enum Test { VALID, false }",
+            "Name 'false' is reserved and cannot be used for an enum value.",
+            (1, 20),
+        )
+        assert_syntax_error(
+            "enum Test { VALID, null }",
+            "Name 'null' is reserved and cannot be used for an enum value.",
+            (1, 20),
+        )
+
     def parses_multi_byte_characters():
         # Note: \u0A0A could be naively interpreted as two line-feed chars.
         doc = parse(
@@ -117,14 +138,14 @@ def describe_parser():
             """
         )
         definitions = doc.definitions
-        assert isinstance(definitions, list)
+        assert isinstance(definitions, tuple)
         assert len(definitions) == 1
         selection_set = cast(OperationDefinitionNode, definitions[0]).selection_set
         selections = selection_set.selections
-        assert isinstance(selections, list)
+        assert isinstance(selections, tuple)
         assert len(selections) == 1
         arguments = cast(FieldNode, selections[0]).arguments
-        assert isinstance(arguments, list)
+        assert isinstance(arguments, tuple)
         assert len(arguments) == 1
         value = arguments[0].value
         assert isinstance(value, StringValueNode)
@@ -209,22 +230,22 @@ def describe_parser():
             )
         )
         assert isinstance(doc, DocumentNode)
-        assert doc.loc == (0, 41)
+        assert doc.loc == (0, 40)
         definitions = doc.definitions
-        assert isinstance(definitions, list)
+        assert isinstance(definitions, tuple)
         assert len(definitions) == 1
         definition = cast(OperationDefinitionNode, definitions[0])
         assert isinstance(definition, DefinitionNode)
         assert definition.loc == (0, 40)
         assert definition.operation == OperationType.QUERY
         assert definition.name is None
-        assert definition.variable_definitions == []
-        assert definition.directives == []
-        selection_set = definition.selection_set
+        assert definition.variable_definitions == ()
+        assert definition.directives == ()
+        selection_set: Optional[SelectionSetNode] = definition.selection_set
         assert isinstance(selection_set, SelectionSetNode)
         assert selection_set.loc == (0, 40)
         selections = selection_set.selections
-        assert isinstance(selections, list)
+        assert isinstance(selections, tuple)
         assert len(selections) == 1
         field = selections[0]
         assert isinstance(field, FieldNode)
@@ -235,7 +256,7 @@ def describe_parser():
         assert name.loc == (4, 8)
         assert name.value == "node"
         arguments = field.arguments
-        assert isinstance(arguments, list)
+        assert isinstance(arguments, tuple)
         assert len(arguments) == 1
         argument = arguments[0]
         assert isinstance(argument, ArgumentNode)
@@ -249,11 +270,11 @@ def describe_parser():
         assert value.loc == (13, 14)
         assert value.value == "4"
         assert argument.loc == (9, 14)
-        assert field.directives == []
-        selection_set = field.selection_set  # type: ignore
+        assert field.directives == ()
+        selection_set = field.selection_set
         assert isinstance(selection_set, SelectionSetNode)
         selections = selection_set.selections
-        assert isinstance(selections, list)
+        assert isinstance(selections, tuple)
         assert len(selections) == 2
         field = selections[0]
         assert isinstance(field, FieldNode)
@@ -263,8 +284,8 @@ def describe_parser():
         assert isinstance(name, NameNode)
         assert name.loc == (22, 24)
         assert name.value == "id"
-        assert field.arguments == []
-        assert field.directives == []
+        assert field.arguments == ()
+        assert field.directives == ()
         assert field.selection_set is None
         field = selections[0]
         assert isinstance(field, FieldNode)
@@ -274,8 +295,8 @@ def describe_parser():
         assert isinstance(name, NameNode)
         assert name.loc == (22, 24)
         assert name.value == "id"
-        assert field.arguments == []
-        assert field.directives == []
+        assert field.arguments == ()
+        assert field.directives == ()
         assert field.selection_set is None
         field = selections[1]
         assert isinstance(field, FieldNode)
@@ -285,8 +306,8 @@ def describe_parser():
         assert isinstance(name, NameNode)
         assert name.loc == (30, 34)
         assert name.value == "name"
-        assert field.arguments == []
-        assert field.directives == []
+        assert field.arguments == ()
+        assert field.directives == ()
         assert field.selection_set is None
 
     def creates_ast_from_nameless_query_without_variables():
@@ -302,22 +323,22 @@ def describe_parser():
             )
         )
         assert isinstance(doc, DocumentNode)
-        assert doc.loc == (0, 30)
+        assert doc.loc == (0, 29)
         definitions = doc.definitions
-        assert isinstance(definitions, list)
+        assert isinstance(definitions, tuple)
         assert len(definitions) == 1
         definition = definitions[0]
         assert isinstance(definition, OperationDefinitionNode)
         assert definition.loc == (0, 29)
         assert definition.operation == OperationType.QUERY
         assert definition.name is None
-        assert definition.variable_definitions == []
-        assert definition.directives == []
-        selection_set = definition.selection_set
+        assert definition.variable_definitions == ()
+        assert definition.directives == ()
+        selection_set: Optional[SelectionSetNode] = definition.selection_set
         assert isinstance(selection_set, SelectionSetNode)
         assert selection_set.loc == (6, 29)
         selections = selection_set.selections
-        assert isinstance(selections, list)
+        assert isinstance(selections, tuple)
         assert len(selections) == 1
         field = selections[0]
         assert isinstance(field, FieldNode)
@@ -327,13 +348,13 @@ def describe_parser():
         assert isinstance(name, NameNode)
         assert name.loc == (10, 14)
         assert name.value == "node"
-        assert field.arguments == []
-        assert field.directives == []
-        selection_set = field.selection_set  # type: ignore
+        assert field.arguments == ()
+        assert field.directives == ()
+        selection_set = field.selection_set
         assert isinstance(selection_set, SelectionSetNode)
         assert selection_set.loc == (15, 27)
         selections = selection_set.selections
-        assert isinstance(selections, list)
+        assert isinstance(selections, tuple)
         assert len(selections) == 1
         field = selections[0]
         assert isinstance(field, FieldNode)
@@ -343,17 +364,17 @@ def describe_parser():
         assert isinstance(name, NameNode)
         assert name.loc == (21, 23)
         assert name.value == "id"
-        assert field.arguments == []
-        assert field.directives == []
+        assert field.arguments == ()
+        assert field.directives == ()
         assert field.selection_set is None
 
     def allows_parsing_without_source_location_information():
         result = parse("{ id }", no_location=True)
         assert result.loc is None
 
-    def experimental_allows_parsing_fragment_defined_variables():
+    def legacy_allows_parsing_fragment_defined_variables():
         document = "fragment a($v: Boolean = false) on t { f(v: $v) }"
-        parse(document, experimental_fragment_variables=True)
+        parse(document, allow_legacy_fragment_variables=True)
         with raises(GraphQLSyntaxError):
             parse(document)
 
@@ -414,7 +435,7 @@ def describe_parse_value():
         assert isinstance(result, ListValueNode)
         assert result.loc == (0, 11)
         values = result.values
-        assert isinstance(values, list)
+        assert isinstance(values, tuple)
         assert len(values) == 2
         value = values[0]
         assert isinstance(value, IntValueNode)
@@ -430,7 +451,7 @@ def describe_parse_value():
         assert isinstance(result, ListValueNode)
         assert result.loc == (0, 20)
         values = result.values
-        assert isinstance(values, list)
+        assert isinstance(values, tuple)
         assert len(values) == 2
         value = values[0]
         assert isinstance(value, StringValueNode)
@@ -442,6 +463,77 @@ def describe_parse_value():
         assert value.loc == (12, 19)
         assert value.value == "short"
         assert value.block is False
+
+    def allows_variables():
+        result = parse_value("{ field: $var }")
+        assert isinstance(result, ObjectValueNode)
+        assert result.loc == (0, 15)
+        fields = result.fields
+        assert len(fields) == 1
+        field = fields[0]
+        assert isinstance(field, ObjectFieldNode)
+        assert field.loc == (2, 13)
+        name = field.name
+        assert isinstance(name, NameNode)
+        assert name.loc == (2, 7)
+        assert name.value == "field"
+        value = field.value
+        assert isinstance(value, VariableNode)
+        assert value.loc == (9, 13)
+        name = value.name
+        assert isinstance(name, NameNode)
+        assert name.loc == (10, 13)
+        assert name.value == "var"
+
+    def correct_message_for_incomplete_variable():
+        with raises(GraphQLSyntaxError) as exc_info:
+            parse_value("$")
+        assert exc_info.value == {
+            "message": "Syntax Error: Expected Name, found <EOF>.",
+            "locations": [(1, 2)],
+        }
+
+    def correct_message_for_unexpected_token():
+        with raises(GraphQLSyntaxError) as exc_info:
+            parse_value(":")
+        assert exc_info.value == {
+            "message": "Syntax Error: Unexpected ':'.",
+            "locations": [(1, 1)],
+        }
+
+
+def describe_parse_const_value():
+    def parses_values():
+        result = parse_const_value('[123 "abc"]')
+        assert isinstance(result, ListValueNode)
+        assert result.loc == (0, 11)
+        values = result.values
+        assert len(values) == 2
+        value = values[0]
+        assert isinstance(value, IntValueNode)
+        assert value.loc == (1, 4)
+        assert value.value == "123"
+        value = values[1]
+        assert isinstance(value, StringValueNode)
+        assert value.loc == (5, 10)
+        assert value.value == "abc"
+        assert value.block is False
+
+    def does_not_allow_variables():
+        with raises(GraphQLSyntaxError) as exc_info:
+            parse_const_value("{ field: $var }")
+        assert exc_info.value == {
+            "message": "Syntax Error: Unexpected variable '$var' in constant value.",
+            "locations": [(1, 10)],
+        }
+
+    def correct_message_for_unexpected_token():
+        with raises(GraphQLSyntaxError) as exc_info:
+            parse_const_value("$$")
+        assert exc_info.value == {
+            "message": "Syntax Error: Unexpected '$'.",
+            "locations": [(1, 1)],
+        }
 
 
 def describe_parse_type():

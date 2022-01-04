@@ -29,6 +29,7 @@ def parse_serialized_value(value: str) -> str:
 
 def parse_literal_value(ast: ValueNode, _variables=None) -> str:
     assert isinstance(ast, StringValueNode)
+    assert ast.value == "SerializedValue"
     return parse_serialized_value(ast.value)
 
 
@@ -388,7 +389,7 @@ def describe_execute_handles_inputs():
                     [
                         {
                             "message": "Variable '$input' got invalid value 'foo bar';"
-                            " Expected type 'TestInputObject' to be a dict.",
+                            " Expected type 'TestInputObject' to be a mapping.",
                             "locations": [(2, 24)],
                             "path": None,
                         }

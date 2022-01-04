@@ -9,7 +9,6 @@ from graphql.language import (
     TypeDefinitionNode,
     TypeExtensionNode,
 )
-from graphql.pyutils import FrozenList
 from graphql.type import (
     GraphQLArgument,
     GraphQLBoolean,
@@ -105,16 +104,16 @@ def describe_type_system_schema():
 
         kwargs = schema.to_kwargs()
         types = kwargs.pop("types")
-        assert types == list(schema.type_map.values())
+        assert types == tuple(schema.type_map.values())
         assert kwargs == {
             "query": BlogQuery,
             "mutation": BlogMutation,
             "subscription": BlogSubscription,
             "directives": specified_directives,
             "description": "Sample schema",
-            "extensions": None,
+            "extensions": {},
             "ast_node": None,
-            "extension_ast_nodes": [],
+            "extension_ast_nodes": (),
             "assume_valid": False,
         }
 
@@ -164,13 +163,13 @@ def describe_type_system_schema():
         )
 
     def freezes_the_specified_directives():
-        directives = [GraphQLDirective("SomeDirective", [])]
-        schema = GraphQLSchema(directives=directives)
-        assert isinstance(schema.directives, FrozenList)
-        assert schema.directives == directives
-        directives = schema.directives
-        schema = GraphQLSchema(directives=directives)
-        assert schema.directives is directives
+        directives_list = [GraphQLDirective("SomeDirective", [])]
+        schema = GraphQLSchema(directives=directives_list)
+        assert isinstance(schema.directives, tuple)
+        assert schema.directives == tuple(directives_list)
+        directives_tuple = schema.directives
+        schema = GraphQLSchema(directives=directives_tuple)
+        assert schema.directives is directives_tuple
 
     def rejects_a_schema_with_incorrectly_typed_description():
         with raises(TypeError) as exc_info:
@@ -194,7 +193,6 @@ def describe_type_system_schema():
             assert schema.type_map["SomeSubtype"] is SomeSubtype
 
             assert schema.is_sub_type(SomeInterface, SomeSubtype) is True
-            assert schema.is_possible_type(SomeInterface, SomeSubtype) is True
 
         def includes_interfaces_thunk_subtypes_in_the_type_map():
             AnotherInterface = GraphQLInterfaceType("AnotherInterface", {})
@@ -409,16 +407,7 @@ def describe_type_system_schema():
                 extension_ast_nodes=extension_ast_nodes,
             )
             assert schema.ast_node is ast_node
-            assert isinstance(schema.extension_ast_nodes, FrozenList)
-            assert schema.extension_ast_nodes == extension_ast_nodes
-            extension_ast_nodes = schema.extension_ast_nodes
-            schema = GraphQLSchema(
-                GraphQLObjectType("Query", {}),
-                ast_node=None,
-                extension_ast_nodes=extension_ast_nodes,
-            )
-            assert schema.ast_node is None
-            assert schema.extension_ast_nodes is extension_ast_nodes
+            assert schema.extension_ast_nodes == tuple(extension_ast_nodes)
 
         def rejects_a_schema_with_an_incorrect_ast_node():
             with raises(TypeError) as exc_info:

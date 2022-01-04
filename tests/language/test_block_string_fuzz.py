@@ -1,5 +1,3 @@
-from typing import Optional
-
 from pytest import mark
 
 from graphql.error import GraphQLSyntaxError
@@ -9,9 +7,10 @@ from graphql.language.block_string import print_block_string
 from ..utils import dedent, gen_fuzz_strings
 
 
-def lex_value(s: str) -> Optional[str]:
+def lex_value(s: str) -> str:
     lexer = Lexer(Source(s))
     value = lexer.advance().value
+    assert isinstance(value, str)
     assert lexer.advance().kind == TokenKind.EOF, "Expected EOF"
     return value
 
@@ -41,13 +40,11 @@ def describe_print_block_string():
                 """
             )
 
-            printed_multiline_string = lex_value(
-                print_block_string(test_value, " ", True)
-            )
+            printed_multiline_string = lex_value(print_block_string(test_value, True))
 
             assert test_value == printed_multiline_string, dedent(
                 f"""
-                Expected lex_value(print_block_string({test_value!r}, ' ', True)
+                Expected lex_value(print_block_string({test_value!r}, True)
                   to equal {test_value!r}
                   but got {printed_multiline_string!r}
                 """

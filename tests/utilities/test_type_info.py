@@ -10,17 +10,52 @@ from graphql.language import (
     visit,
     Visitor,
 )
-from graphql.type import get_named_type, is_composite_type
+from graphql.type import GraphQLSchema, get_named_type, is_composite_type
 from graphql.utilities import TypeInfo, TypeInfoVisitor, build_schema
-
-from ..validation.harness import test_schema
 
 from ..fixtures import kitchen_sink_query  # noqa: F401
 
 
+test_schema = build_schema(
+    """
+    interface Pet {
+      name: String
+    }
+
+    type Dog implements Pet {
+      name: String
+    }
+
+    type Cat implements Pet {
+      name: String
+    }
+
+    type Human {
+      name: String
+      pets: [Pet]
+    }
+
+    type Alien {
+      name(surname: Boolean): String
+    }
+
+    type QueryRoot {
+      human(id: ID): Human
+      alien: Alien
+    }
+
+    schema {
+      query: QueryRoot
+    }
+    """
+)
+
+
 def describe_type_info():
+    schema = GraphQLSchema()
+
     def allow_all_methods_to_be_called_before_entering_any_mode():
-        type_info = TypeInfo(test_schema)
+        type_info = TypeInfo(schema)
 
         assert type_info.get_type() is None
         assert type_info.get_parent_type() is None
@@ -66,6 +101,7 @@ def describe_visit_with_type_info():
 
         class TestVisitor(Visitor):
             def __init__(self):
+                super().__init__()
                 self.root_types = {}
 
             def enter_operation_definition(self, node: OperationDefinitionNode, *_args):
@@ -86,6 +122,7 @@ def describe_visit_with_type_info():
 
         class TestVisitor(Visitor):
             def __init__(self):
+                super().__init__()
                 self.args = []
 
             def enter(self, *args):
@@ -306,9 +343,16 @@ def describe_visit_with_type_info():
     def supports_traversal_of_input_values():
         visited = []
 
-        complex_input_type = test_schema.get_type("ComplexInput")
+        schema = build_schema(
+            """
+            input ComplexInput {
+              stringListField: [String]
+            }
+            """
+        )
+        complex_input_type = schema.get_type("ComplexInput")
         assert complex_input_type is not None
-        type_info = TypeInfo(test_schema, None, complex_input_type)
+        type_info = TypeInfo(schema, complex_input_type)
 
         ast = parse_value('{ stringListField: ["foo"] }')
 
@@ -357,7 +401,7 @@ def describe_visit_with_type_info():
 
         human_type = test_schema.get_type("Human")
         assert human_type is not None
-        type_info = TypeInfo(test_schema, None, human_type)
+        type_info = TypeInfo(test_schema, human_type)
 
         ast = parse("{ name, pets { name } }")
         operation_node = ast.definitions[0]

@@ -79,9 +79,10 @@ def strip_ignored_characters(source: Union[str, Source]) -> str:
         # Also prevent case of non-punctuator token following by spread resulting
         # in invalid token (e.g.`1...` is invalid Float token).
         is_non_punctuator = not is_punctuator_token_kind(current_token.kind)
-        if was_last_added_token_non_punctuator:
-            if is_non_punctuator or current_token.kind == TokenKind.SPREAD:
-                stripped_body += " "
+        if was_last_added_token_non_punctuator and (
+            is_non_punctuator or current_token.kind == TokenKind.SPREAD
+        ):
+            stripped_body += " "
 
         token_body = body[current_token.start : current_token.end]
         if token_kind == TokenKind.BLOCK_STRING:
@@ -102,9 +103,8 @@ def dedent_block_string(block_str: str) -> str:
     if get_block_string_indentation(body) > 0:
         body = "\n" + body
 
-    last_char = body[-1:]
-    has_trailing_quote = last_char == '"' and body[-4:] != '\\"""'
-    if has_trailing_quote or last_char == "\\":
+    has_trailing_quote = body.endswith('"') and not body.endswith('\\"""')
+    if has_trailing_quote or body.endswith("\\"):
         body += "\n"
 
     return '"""' + body + '"""'

@@ -9,8 +9,8 @@ include .coveragerc
 include .editorconfig
 include .flake8
 include .mypy.ini
+include .readthedocs.yaml
 
-include codecov.yml
 include tox.ini
 
 include poetry.lock

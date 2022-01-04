@@ -9,14 +9,6 @@ from ..utils import dedent
 
 
 def describe_printer_query_document():
-
-    # noinspection PyShadowingNames
-    def does_not_alter_ast(kitchen_sink_query):  # noqa: F811
-        ast = parse(kitchen_sink_query)
-        ast_before = deepcopy(ast)
-        print_ast(ast)
-        assert ast == ast_before
-
     def prints_minimal_ast():
         ast = FieldNode(name=NameNode(value="foo"))
         assert print_ast(ast) == "foo"
@@ -34,11 +26,11 @@ def describe_printer_query_document():
 
     def correctly_prints_query_operation_without_name():
         query_ast_shorthanded = parse("query { id, name }")
-        assert print_ast(query_ast_shorthanded) == "{\n  id\n  name\n}\n"
+        assert print_ast(query_ast_shorthanded) == "{\n  id\n  name\n}"
 
     def correctly_prints_mutation_operation_without_name():
         mutation_ast = parse("mutation { id, name }")
-        assert print_ast(mutation_ast) == "mutation {\n  id\n  name\n}\n"
+        assert print_ast(mutation_ast) == "mutation {\n  id\n  name\n}"
 
     def correctly_prints_query_operation_with_artifacts():
         query_ast_with_artifacts = parse(
@@ -114,10 +106,10 @@ def describe_printer_query_document():
             """
         )
 
-    def experimental_prints_fragment_with_variable_directives():
+    def legacy_prints_fragment_with_variable_directives():
         query_ast_with_variable_directive = parse(
             "fragment Foo($foo: TestType @test) on TestType @testDirective { id }",
-            experimental_fragment_variables=True,
+            allow_legacy_fragment_variables=True,
         )
         assert print_ast(query_ast_with_variable_directive) == dedent(
             """
@@ -127,19 +119,24 @@ def describe_printer_query_document():
             """
         )
 
-    def experimental_correctly_prints_fragment_defined_variables():
+    def legacy_correctly_prints_fragment_defined_variables():
         source = """
             fragment Foo($a: ComplexType, $b: Boolean = false) on TestType {
               id
             }
             """
-        fragment_with_variable = parse(source, experimental_fragment_variables=True)
+        fragment_with_variable = parse(source, allow_legacy_fragment_variables=True)
         assert print_ast(fragment_with_variable) == dedent(source)
 
-    # noinspection PyShadowingNames
-    def prints_kitchen_sink(kitchen_sink_query):  # noqa: F811
-        ast = parse(kitchen_sink_query)
+    def prints_kitchen_sink_without_altering_ast(kitchen_sink_query):  # noqa: F811
+        ast = parse(kitchen_sink_query, no_location=True)
+
+        ast_before_print_call = deepcopy(ast)
         printed = print_ast(ast)
+        printed_ast = parse(printed, no_location=True)
+        assert printed_ast == ast
+        assert deepcopy(ast) == ast_before_print_call
+
         assert printed == dedent(
             r'''
             query queryName($foo: ComplexType, $site: Site = MOBILE) @onQuery {
@@ -171,7 +168,7 @@ def describe_printer_query_document():
               }
             }
 
-            subscription StoryLikeSubscription($input: StoryLikeSubscribeInput) @onSubscription {
+            subscription StoryLikeSubscription($input: StoryLikeSubscribeInput @onVariableDefinition) @onSubscription {
               storyLikeSubscribe(input: $input) {
                 story {
                   likers {
@@ -189,7 +186,7 @@ def describe_printer_query_document():
                 size: $size
                 bar: $b
                 obj: {key: "value", block: """
-                  block string uses \"""
+                block string uses \"""
                 """}
               )
             }

@@ -1,6 +1,6 @@
 import re
 from math import isfinite
-from typing import Any, Iterable, Mapping, Optional, cast
+from typing import Any, Mapping, Optional, cast
 
 from ..language import (
     BooleanValueNode,
@@ -15,7 +15,7 @@ from ..language import (
     StringValueNode,
     ValueNode,
 )
-from ..pyutils import inspect, FrozenList, Undefined
+from ..pyutils import inspect, is_iterable, Undefined
 from ..type import (
     GraphQLID,
     GraphQLInputType,
@@ -78,10 +78,10 @@ def ast_from_value(value: Any, type_: GraphQLInputType) -> Optional[ValueNode]:
     if is_list_type(type_):
         type_ = cast(GraphQLList, type_)
         item_type = type_.of_type
-        if isinstance(value, Iterable) and not isinstance(value, str):
+        if is_iterable(value):
             maybe_value_nodes = (ast_from_value(item, item_type) for item in value)
-            value_nodes = filter(None, maybe_value_nodes)
-            return ListValueNode(values=FrozenList(value_nodes))
+            value_nodes = tuple(node for node in maybe_value_nodes if node)
+            return ListValueNode(values=value_nodes)
         return ast_from_value(value, item_type)
 
     # Populate the fields of the input object by creating ASTs from each value in the
@@ -95,12 +95,12 @@ def ast_from_value(value: Any, type_: GraphQLInputType) -> Optional[ValueNode]:
             for field_name, field in type_.fields.items()
             if field_name in value
         )
-        field_nodes = (
+        field_nodes = tuple(
             ObjectFieldNode(name=NameNode(value=field_name), value=field_value)
             for field_name, field_value in field_items
             if field_value
         )
-        return ObjectValueNode(fields=FrozenList(field_nodes))
+        return ObjectValueNode(fields=field_nodes)
 
     if is_leaf_type(type_):
         # Since value is an internally represented value, it must be serialized to an

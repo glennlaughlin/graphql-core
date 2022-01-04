@@ -1,3 +1,5 @@
+from typing import cast
+
 from graphql.language.block_string import (
     dedent_block_string_value,
     print_block_string,
@@ -116,12 +118,12 @@ def describe_print_block_string():
     def by_default_print_block_strings_as_single_line():
         s = "one liner"
         assert print_block_string(s) == '"""one liner"""'
-        assert print_block_string(s, "", True) == '"""\none liner\n"""'
+        assert print_block_string(s, True) == '"""\none liner\n"""'
 
     def correctly_prints_single_line_with_leading_space():
         s = "    space-led string"
         assert print_block_string(s) == '"""    space-led string"""'
-        assert print_block_string(s, "", True) == '"""    space-led string\n"""'
+        assert print_block_string(s, True) == '"""    space-led string\n"""'
 
     def correctly_prints_single_line_with_leading_space_and_quotation():
         s = '    space-led value "quoted string"'
@@ -129,15 +131,14 @@ def describe_print_block_string():
         assert print_block_string(s) == '"""    space-led value "quoted string"\n"""'
 
         assert (
-            print_block_string(s, "", True)
-            == '"""    space-led value "quoted string"\n"""'
+            print_block_string(s, True) == '"""    space-led value "quoted string"\n"""'
         )
 
     def correctly_prints_single_line_with_trailing_backslash():
         s = "backslash \\"
 
         assert print_block_string(s) == '"""\nbackslash \\\n"""'
-        assert print_block_string(s, "", True) == '"""\nbackslash \\\n"""'
+        assert print_block_string(s, True) == '"""\nbackslash \\\n"""'
 
     def correctly_prints_string_with_a_first_line_indentation():
         s = join_lines("    first  ", "  line     ", "indentation", "     string")
@@ -145,3 +146,10 @@ def describe_print_block_string():
         assert print_block_string(s) == join_lines(
             '"""', "    first  ", "  line     ", "indentation", "     string", '"""'
         )
+
+    def correctly_prints_lazy_stings():
+        class LazyString:
+            def __str__(self):
+                return "lazy"
+
+        assert print_block_string(cast(str, LazyString())) == '"""lazy"""'

@@ -1,7 +1,8 @@
-from typing import Any, Collection, Dict, List, Optional, cast
+from typing import Any, Collection, Dict, Optional, Tuple, cast
 
 from ..language import ast, DirectiveLocation
-from ..pyutils import inspect, is_description, FrozenList
+from ..pyutils import inspect, is_description
+from .assert_name import assert_name
 from .definition import GraphQLArgument, GraphQLInputType, GraphQLNonNull, is_input_type
 from .scalars import GraphQLBoolean, GraphQLString
 
@@ -28,11 +29,11 @@ class GraphQLDirective:
     """
 
     name: str
-    locations: List[DirectiveLocation]
+    locations: Tuple[DirectiveLocation, ...]
     is_repeatable: bool
     args: Dict[str, GraphQLArgument]
     description: Optional[str]
-    extensions: Optional[Dict[str, Any]]
+    extensions: Dict[str, Any]
     ast_node: Optional[ast.DirectiveDefinitionNode]
 
     def __init__(
@@ -45,17 +46,14 @@ class GraphQLDirective:
         extensions: Optional[Dict[str, Any]] = None,
         ast_node: Optional[ast.DirectiveDefinitionNode] = None,
     ) -> None:
-        if not name:
-            raise TypeError("Directive must be named.")
-        elif not isinstance(name, str):
-            raise TypeError("The directive name must be a string.")
+        assert_name(name)
         try:
-            locations = [
+            locations = tuple(
                 value
                 if isinstance(value, DirectiveLocation)
                 else DirectiveLocation[cast(str, value)]
                 for value in locations
-            ]
+            )
         except (KeyError, TypeError):
             raise TypeError(
                 f"{name} locations must be specified"
@@ -76,7 +74,7 @@ class GraphQLDirective:
             )
         else:
             args = {
-                name: value
+                assert_name(name): value
                 if isinstance(value, GraphQLArgument)
                 else GraphQLArgument(cast(GraphQLInputType, value))
                 for name, value in args.items()
@@ -87,9 +85,10 @@ class GraphQLDirective:
             raise TypeError(f"{name} AST node must be a DirectiveDefinitionNode.")
         if description is not None and not is_description(description):
             raise TypeError(f"{name} description must be a string.")
-        if extensions is not None and (
-            not isinstance(extensions, dict)
-            or not all(isinstance(key, str) for key in extensions)
+        if extensions is None:
+            extensions = {}
+        elif not isinstance(extensions, dict) or not all(
+            isinstance(key, str) for key in extensions
         ):
             raise TypeError(f"{name} extensions must be a dictionary with string keys.")
         self.name = name
@@ -219,15 +218,13 @@ GraphQLSpecifiedByDirective = GraphQLDirective(
 )
 
 
-specified_directives: FrozenList[GraphQLDirective] = FrozenList(
-    [
-        GraphQLIncludeDirective,
-        GraphQLSkipDirective,
-        GraphQLDeprecatedDirective,
-        GraphQLSpecifiedByDirective,
-    ]
+specified_directives: Tuple[GraphQLDirective, ...] = (
+    GraphQLIncludeDirective,
+    GraphQLSkipDirective,
+    GraphQLDeprecatedDirective,
+    GraphQLSpecifiedByDirective,
 )
-specified_directives.__doc__ = """The full list of specified directives."""
+"""A tuple with all directives from the GraphQL specification"""
 
 
 def is_specified_directive(directive: GraphQLDirective) -> bool:

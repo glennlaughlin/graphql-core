@@ -7,13 +7,14 @@ from typing import (
     NamedTuple,
     Optional,
     Set,
+    Tuple,
     Union,
     cast,
 )
 
 from ..error import GraphQLError
-from ..language import ast
-from ..pyutils import inspect, is_collection, is_description, FrozenList
+from ..language import ast, OperationType
+from ..pyutils import inspect, is_collection, is_description
 from .definition import (
     GraphQLAbstractType,
     GraphQLInterfaceType,
@@ -51,6 +52,9 @@ class GraphQLSchema:
     A Schema is created by supplying the root types of each type of operation, query
     and mutation (optional). A schema definition is then supplied to the validator
     and executor.
+
+    Schemas should be considered immutable once they are created. If you want to modify
+    a schema, modify the result of the ``to_kwargs()`` method and recreate the schema.
 
     Example::
 
@@ -96,11 +100,11 @@ class GraphQLSchema:
     mutation_type: Optional[GraphQLObjectType]
     subscription_type: Optional[GraphQLObjectType]
     type_map: TypeMap
-    directives: FrozenList[GraphQLDirective]
+    directives: Tuple[GraphQLDirective, ...]
     description: Optional[str]
-    extensions: Optional[Dict[str, Any]]
+    extensions: Dict[str, Any]
     ast_node: Optional[ast.SchemaDefinitionNode]
-    extension_ast_nodes: Optional[FrozenList[ast.SchemaExtensionNode]]
+    extension_ast_nodes: Tuple[ast.SchemaExtensionNode, ...]
 
     _implementations_map: Dict[str, InterfaceImplementations]
     _sub_type_map: Dict[str, Set[str]]
@@ -147,13 +151,14 @@ class GraphQLSchema:
             # noinspection PyUnresolvedReferences
             if not is_collection(directives):
                 raise TypeError("Schema directives must be a collection.")
-            if not isinstance(directives, FrozenList):
-                directives = FrozenList(directives)
+            if not isinstance(directives, tuple):
+                directives = tuple(directives)
         if description is not None and not is_description(description):
             raise TypeError("Schema description must be a string.")
-        if extensions is not None and (
-            not isinstance(extensions, dict)
-            or not all(isinstance(key, str) for key in extensions)
+        if extensions is None:
+            extensions = {}
+        elif not isinstance(extensions, dict) or not all(
+            isinstance(key, str) for key in extensions
         ):
             raise TypeError("Schema extensions must be a dictionary with string keys.")
         if ast_node and not isinstance(ast_node, ast.SchemaDefinitionNode):
@@ -167,27 +172,20 @@ class GraphQLSchema:
                     "Schema extension AST nodes must be specified"
                     " as a collection of SchemaExtensionNode instances."
                 )
-            if not isinstance(extension_ast_nodes, FrozenList):
-                extension_ast_nodes = FrozenList(extension_ast_nodes)
+            if not isinstance(extension_ast_nodes, tuple):
+                extension_ast_nodes = tuple(extension_ast_nodes)
+        else:
+            extension_ast_nodes = ()
 
         self.description = description
         self.extensions = extensions
         self.ast_node = ast_node
-        self.extension_ast_nodes = (
-            cast(FrozenList[ast.SchemaExtensionNode], extension_ast_nodes)
-            if extension_ast_nodes
-            else None
-        )
-
+        self.extension_ast_nodes = extension_ast_nodes
         self.query_type = query
         self.mutation_type = mutation
         self.subscription_type = subscription
         # Provide specified directives (e.g. @include and @skip) by default
-        self.directives = (
-            specified_directives
-            if directives is None
-            else cast(FrozenList[GraphQLDirective], directives)
-        )
+        self.directives = specified_directives if directives is None else directives
 
         # To preserve order of user-provided types, we add first to add them to
         # the set of "collected" types, so `collect_referenced_types` ignore them.
@@ -279,12 +277,12 @@ class GraphQLSchema:
             query=self.query_type,
             mutation=self.mutation_type,
             subscription=self.subscription_type,
-            types=FrozenList(self.type_map.values()) or None,
-            directives=self.directives[:],
+            types=tuple(self.type_map.values()) or None,
+            directives=self.directives,
             description=self.description,
             extensions=self.extensions,
             ast_node=self.ast_node,
-            extension_ast_nodes=self.extension_ast_nodes or FrozenList(),
+            extension_ast_nodes=self.extension_ast_nodes,
             assume_valid=self._validation_errors is not None,
         )
 
@@ -325,6 +323,9 @@ class GraphQLSchema:
             assume_valid=True,
         )
 
+    def get_root_type(self, operation: OperationType) -> Optional[GraphQLObjectType]:
+        return getattr(self, f"{operation.value}_type")
+
     def get_type(self, name: str) -> Optional[GraphQLNamedType]:
         return self.type_map.get(name)
 
@@ -346,15 +347,6 @@ class GraphQLSchema:
         return self._implementations_map.get(
             interface_type.name, InterfaceImplementations(objects=[], interfaces=[])
         )
-
-    def is_possible_type(
-        self, abstract_type: GraphQLAbstractType, possible_type: GraphQLObjectType
-    ) -> bool:
-        """Check whether a concrete type is possible for an abstract type.
-
-        Deprecated: Use is_sub_type() instead.
-        """
-        return self.is_sub_type(abstract_type, possible_type)
 
     def is_sub_type(
         self,

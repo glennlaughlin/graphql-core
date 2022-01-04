@@ -504,7 +504,7 @@ def describe_type_system_printer():
             """
         )
 
-    def prints_custom_scalar_with_speicified_by_url():
+    def prints_custom_scalar_with_specified_by_url():
         foo_type = GraphQLScalarType(
             name="Foo", specified_by_url="https://example.com/foo_spec"
         )
@@ -673,13 +673,13 @@ def describe_type_system_printer():
             """
             The fundamental unit of any GraphQL Schema is the type. There are many kinds of types in GraphQL as represented by the `__TypeKind` enum.
 
-            Depending on the kind of a type, certain fields describe information about that type. Scalar types provide no information beyond a name, description and optional `specifiedByUrl`, while Enum types provide their values. Object and Interface types provide the fields they describe. Abstract types, Union and Interface, provide the Object types possible at runtime. List and NonNull types compose other types.
+            Depending on the kind of a type, certain fields describe information about that type. Scalar types provide no information beyond a name, description and optional `specifiedByURL`, while Enum types provide their values. Object and Interface types provide the fields they describe. Abstract types, Union and Interface, provide the Object types possible at runtime. List and NonNull types compose other types.
             """
             type __Type {
               kind: __TypeKind!
               name: String
               description: String
-              specifiedByUrl: String
+              specifiedByURL: String
               fields(includeDeprecated: Boolean = false): [__Field!]
               interfaces: [__Type!]
               possibleTypes: [__Type!]
@@ -769,7 +769,7 @@ def describe_type_system_printer():
               description: String
               isRepeatable: Boolean!
               locations: [__DirectiveLocation!]!
-              args: [__InputValue!]!
+              args(includeDeprecated: Boolean = false): [__InputValue!]!
             }
 
             """

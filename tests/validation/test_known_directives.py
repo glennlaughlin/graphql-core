@@ -5,14 +5,22 @@ from graphql.validation import KnownDirectivesRule
 
 from .harness import assert_validation_errors, assert_sdl_validation_errors
 
-assert_errors = partial(assert_validation_errors, KnownDirectivesRule)
+schema_with_directives = build_schema(
+    """
+    type Query {
+      dummy: String
+    }
 
-assert_valid = partial(assert_errors, errors=[])
-
-assert_sdl_errors = partial(assert_sdl_validation_errors, KnownDirectivesRule)
-
-assert_sdl_valid = partial(assert_sdl_errors, errors=[])
-
+    directive @onQuery on QUERY
+    directive @onMutation on MUTATION
+    directive @onSubscription on SUBSCRIPTION
+    directive @onField on FIELD
+    directive @onFragmentDefinition on FRAGMENT_DEFINITION
+    directive @onFragmentSpread on FRAGMENT_SPREAD
+    directive @onInlineFragment on INLINE_FRAGMENT
+    directive @onVariableDefinition on VARIABLE_DEFINITION
+    """
+)
 
 schema_with_sdl_directives = build_schema(
     """
@@ -30,6 +38,16 @@ schema_with_sdl_directives = build_schema(
     """
 )
 
+assert_errors = partial(
+    assert_validation_errors, KnownDirectivesRule, schema=schema_with_directives
+)
+
+assert_valid = partial(assert_errors, errors=[])
+
+assert_sdl_errors = partial(assert_sdl_validation_errors, KnownDirectivesRule)
+
+assert_sdl_valid = partial(assert_sdl_errors, errors=[])
+
 
 def describe_known_directives():
     def with_no_directives():
@@ -46,15 +64,17 @@ def describe_known_directives():
             """
         )
 
-    def with_known_directives():
+    def with_standard_directives():
         assert_valid(
             """
             {
-              dog @include(if: true) {
-                name
-              }
               human @skip(if: false) {
                 name
+                pets {
+                  ... on Dog @include(if: true) {
+                    name
+                  }
+                }
               }
             }
             """
@@ -64,69 +84,56 @@ def describe_known_directives():
         assert_errors(
             """
             {
-              dog @unknown(directive: "value") {
+              human @unknown(directive: "value") {
                 name
               }
             }
             """,
-            [{"message": "Unknown directive '@unknown'.", "locations": [(3, 19)]}],
+            [{"message": "Unknown directive '@unknown'.", "locations": [(3, 21)]}],
         )
 
     def with_many_unknown_directives():
         assert_errors(
             """
             {
-              dog @unknown(directive: "value") {
+              __typename @unknown
+              human @unknown {
                 name
-              }
-              human @unknown(directive: "value") {
-                name
-                pets @unknown(directive: "value") {
+                pets @unknown {
                   name
                 }
               }
             }
             """,
             [
-                {"message": "Unknown directive '@unknown'.", "locations": [(3, 19)]},
-                {"message": "Unknown directive '@unknown'.", "locations": [(6, 21)]},
-                {"message": "Unknown directive '@unknown'.", "locations": [(8, 22)]},
+                {"message": "Unknown directive '@unknown'.", "locations": [(3, 26)]},
+                {"message": "Unknown directive '@unknown'.", "locations": [(4, 21)]},
+                {"message": "Unknown directive '@unknown'.", "locations": [(6, 22)]},
             ],
         )
 
     def with_well_placed_directives():
         assert_valid(
             """
-            query ($var: Boolean) @onQuery {
-              name @include(if: $var)
-              ...Frag @include(if: true)
-              skippedField @skip(if: true)
-              ...SkippedFrag @skip(if: true)
-
-              ... @skip(if: true) {
-                skippedField
+            query ($var: Boolean @onVariableDefinition) @onQuery {
+              human @onField {
+                ...Frag @onFragmentSpread
+                ... @onInlineFragment {
+                  name @onField
+                }
               }
             }
 
             mutation @onMutation {
-              someField
+              someField @onField
             }
 
             subscription @onSubscription {
-              someField
+              someField @onField
             }
 
-            fragment Frag on SomeType @onFragmentDefinition {
-              someField
-            }
-            """
-        )
-
-    def with_well_placed_variable_definition_directive():
-        assert_valid(
-            """
-            query Foo($var: Boolean @onVariableDefinition) {
-              name
+            fragment Frag on Human @onFragmentDefinition {
+              name @onField
             }
             """
         )
@@ -134,32 +141,79 @@ def describe_known_directives():
     def with_misplaced_directives():
         assert_errors(
             """
-            query Foo($var: Boolean) @include(if: true) {
-              name @onQuery @include(if: $var)
-              ...Frag @onQuery
+            query ($var: Boolean @onQuery) @onMutation {
+              human @onQuery {
+                ...Frag @onQuery
+                ... @onQuery {
+                  name @onQuery
+                }
+              }
             }
 
-            mutation Bar @onQuery {
-              someField
+            mutation @onQuery {
+              someField @onQuery
+            }
+
+            subscription @onQuery {
+              someField @onQuery
+            }
+
+            fragment Frag on Human @onQuery {
+              name @onQuery
             }
             """,
             [
                 {
-                    "message": "Directive '@include' may not be used on query.",
-                    "locations": [(2, 38)],
+                    "message": "Directive '@onQuery'"
+                    " may not be used on variable definition.",
+                    "locations": [(2, 34)],
+                },
+                {
+                    "message": "Directive '@onMutation' may not be used on query.",
+                    "locations": [(2, 44)],
                 },
                 {
                     "message": "Directive '@onQuery' may not be used on field.",
-                    "locations": [(3, 20)],
+                    "locations": [(3, 21)],
                 },
                 {
                     "message": "Directive '@onQuery'"
                     " may not be used on fragment spread.",
-                    "locations": [(4, 23)],
+                    "locations": [(4, 25)],
+                },
+                {
+                    "message": "Directive '@onQuery'"
+                    " may not be used on inline fragment.",
+                    "locations": [(5, 21)],
+                },
+                {
+                    "message": "Directive '@onQuery' may not be used on field.",
+                    "locations": [(6, 24)],
                 },
                 {
                     "message": "Directive '@onQuery' may not be used on mutation.",
-                    "locations": [(7, 26)],
+                    "locations": [(11, 22)],
+                },
+                {
+                    "message": "Directive '@onQuery' may not be used on field.",
+                    "locations": [(12, 25)],
+                },
+                {
+                    "message": "Directive '@onQuery' may not be used on subscription.",
+                    "locations": [(15, 26)],
+                },
+                {
+                    "message": "Directive '@onQuery' may not be used on field.",
+                    "locations": [(16, 25)],
+                },
+                {
+                    "message": "Directive '@onQuery'"
+                    " may not be used on fragment definition.",
+                    "locations": [(19, 36)],
+                },
+                {
+                    "message": "Directive '@onQuery' may not be used on field.",
+                    "locations": [(20, 20)],
                 },
             ],
         )

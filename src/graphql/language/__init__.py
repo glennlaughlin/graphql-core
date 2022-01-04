@@ -6,7 +6,7 @@ GraphQL language.
 
 from .source import Source
 
-from .location import get_location, SourceLocation
+from .location import get_location, SourceLocation, FormattedSourceLocation
 
 from .print_location import print_location, print_source_location
 
@@ -14,7 +14,7 @@ from .token_kind import TokenKind
 
 from .lexer import Lexer
 
-from .parser import parse, parse_type, parse_value
+from .parser import parse, parse_type, parse_value, parse_const_value
 
 from .printer import print_ast
 
@@ -23,6 +23,7 @@ from .visitor import (
     Visitor,
     ParallelVisitor,
     VisitorAction,
+    VisitorKeyMap,
     BREAK,
     SKIP,
     REMOVE,
@@ -46,10 +47,12 @@ from .ast import (
     SelectionNode,
     FieldNode,
     ArgumentNode,
+    ConstArgumentNode,
     FragmentSpreadNode,
     InlineFragmentNode,
     FragmentDefinitionNode,
     ValueNode,
+    ConstValueNode,
     IntValueNode,
     FloatValueNode,
     StringValueNode,
@@ -57,9 +60,13 @@ from .ast import (
     NullValueNode,
     EnumValueNode,
     ListValueNode,
+    ConstListValueNode,
     ObjectValueNode,
+    ConstObjectValueNode,
     ObjectFieldNode,
+    ConstObjectFieldNode,
     DirectiveNode,
+    ConstDirectiveNode,
     TypeNode,
     NamedTypeNode,
     ListTypeNode,
@@ -93,6 +100,7 @@ from .predicates import (
     is_executable_definition_node,
     is_selection_node,
     is_value_node,
+    is_const_value_node,
     is_type_node,
     is_type_system_definition_node,
     is_type_definition_node,
@@ -104,12 +112,14 @@ from .directive_locations import DirectiveLocation
 __all__ = [
     "get_location",
     "SourceLocation",
+    "FormattedSourceLocation",
     "print_location",
     "print_source_location",
     "TokenKind",
     "Lexer",
     "parse",
     "parse_value",
+    "parse_const_value",
     "parse_type",
     "print_ast",
     "Source",
@@ -117,6 +127,7 @@ __all__ = [
     "Visitor",
     "ParallelVisitor",
     "VisitorAction",
+    "VisitorKeyMap",
     "BREAK",
     "SKIP",
     "REMOVE",
@@ -137,10 +148,12 @@ __all__ = [
     "SelectionNode",
     "FieldNode",
     "ArgumentNode",
+    "ConstArgumentNode",
     "FragmentSpreadNode",
     "InlineFragmentNode",
     "FragmentDefinitionNode",
     "ValueNode",
+    "ConstValueNode",
     "IntValueNode",
     "FloatValueNode",
     "StringValueNode",
@@ -148,9 +161,13 @@ __all__ = [
     "NullValueNode",
     "EnumValueNode",
     "ListValueNode",
+    "ConstListValueNode",
     "ObjectValueNode",
+    "ConstObjectValueNode",
     "ObjectFieldNode",
+    "ConstObjectFieldNode",
     "DirectiveNode",
+    "ConstDirectiveNode",
     "TypeNode",
     "NamedTypeNode",
     "ListTypeNode",
@@ -182,6 +199,7 @@ __all__ = [
     "is_executable_definition_node",
     "is_selection_node",
     "is_value_node",
+    "is_const_value_node",
     "is_type_node",
     "is_type_system_definition_node",
     "is_type_definition_node",

@@ -789,6 +789,49 @@ def describe_execute_handles_basic_execution_tasks():
         result = execute_sync(schema, document, Data(), operation_name="S")
         assert result == ({"a": "b"}, None)
 
+    def resolves_to_an_error_if_schema_does_not_support_operation():
+        schema = GraphQLSchema(assume_valid=True)
+
+        document = parse(
+            """
+            query Q { __typename }
+            mutation M { __typename }
+            subscription S { __typename }
+            """
+        )
+
+        assert execute_sync(schema, document, operation_name="Q") == (
+            None,
+            [
+                {
+                    "message": "Schema is not configured to execute query operation.",
+                    "locations": [(2, 13)],
+                }
+            ],
+        )
+
+        assert execute_sync(schema, document, operation_name="M") == (
+            None,
+            [
+                {
+                    "message": "Schema is not configured to execute"
+                    " mutation operation.",
+                    "locations": [(3, 13)],
+                }
+            ],
+        )
+
+        assert execute_sync(schema, document, operation_name="S") == (
+            None,
+            [
+                {
+                    "message": "Schema is not configured to execute"
+                    " subscription operation.",
+                    "locations": [(4, 13)],
+                }
+            ],
+        )
+
     @mark.asyncio
     async def correct_field_ordering_despite_execution_order():
         schema = GraphQLSchema(
@@ -983,8 +1026,8 @@ def describe_execute_handles_basic_execution_tasks():
             {"customScalar": None},
             [
                 {
-                    "message": "Expected a value of type 'CustomScalar'"
-                    " but received: 'CUSTOM_VALUE'",
+                    "message": "Expected `CustomScalar.serialize('CUSTOM_VALUE')`"
+                    " to return non-nullable value, returned: Undefined",
                     "locations": [(1, 3)],
                     "path": ["customScalar"],
                 }
