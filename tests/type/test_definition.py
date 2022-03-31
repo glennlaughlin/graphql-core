@@ -1,3 +1,4 @@
+from enum import Enum
 from math import isnan, nan
 from typing import cast, Dict
 
@@ -344,6 +345,28 @@ def describe_type_system_fields():
 
 
 def describe_type_system_objects():
+    def defines_an_object_type():
+        fields = {"f": GraphQLField(ScalarType)}
+        interfaces = (InterfaceType,)
+        type_ = GraphQLObjectType("AnotherObjectType", fields, interfaces)
+        assert type_.name == "AnotherObjectType"
+        assert type_.fields == fields
+        assert type_.fields is not fields
+        assert type_.interfaces == interfaces
+        assert type_.interfaces is interfaces
+        assert type_.extensions == {}
+        kwargs = type_.to_kwargs()
+        assert kwargs == {
+            "name": "AnotherObjectType",
+            "description": None,
+            "fields": fields,
+            "interfaces": interfaces,
+            "is_type_of": None,
+            "extensions": {},
+            "ast_node": None,
+            "extension_ast_nodes": (),
+        }
+
     def does_not_mutate_passed_field_definitions():
         output_fields = {
             "field1": GraphQLField(ScalarType),
@@ -1035,6 +1058,50 @@ def describe_type_system_unions():
 
 
 def describe_type_system_enums():
+    def defines_an_enum_using_a_dict():
+        enum_type = GraphQLEnumType("SomeEnum", {"RED": 1, "BLUE": 2})
+        assert enum_type.values == {
+            "RED": GraphQLEnumValue(1),
+            "BLUE": GraphQLEnumValue(2),
+        }
+
+    def defines_an_enum_using_an_enum_value_map():
+        red, blue = GraphQLEnumValue(1), GraphQLEnumValue(2)
+        enum_type = GraphQLEnumType("SomeEnum", {"RED": red, "BLUE": blue})
+        assert enum_type.values == {"RED": red, "BLUE": blue}
+
+    def defines_an_enum_using_a_python_enum():
+        colors = Enum("Colors", "RED BLUE")
+        enum_type = GraphQLEnumType("SomeEnum", colors)
+        assert enum_type.values == {
+            "RED": GraphQLEnumValue(1),
+            "BLUE": GraphQLEnumValue(2),
+        }
+
+    def defines_an_enum_using_values_of_a_python_enum():
+        colors = Enum("Colors", "RED BLUE")
+        enum_type = GraphQLEnumType("SomeEnum", colors, names_as_values=False)
+        assert enum_type.values == {
+            "RED": GraphQLEnumValue(1),
+            "BLUE": GraphQLEnumValue(2),
+        }
+
+    def defines_an_enum_using_names_of_a_python_enum():
+        colors = Enum("Colors", "RED BLUE")
+        enum_type = GraphQLEnumType("SomeEnum", colors, names_as_values=True)
+        assert enum_type.values == {
+            "RED": GraphQLEnumValue("RED"),
+            "BLUE": GraphQLEnumValue("BLUE"),
+        }
+
+    def defines_an_enum_using_members_of_a_python_enum():
+        colors = Enum("Colors", "RED BLUE")
+        enum_type = GraphQLEnumType("SomeEnum", colors, names_as_values=None)
+        assert enum_type.values == {
+            "RED": GraphQLEnumValue(colors.RED),
+            "BLUE": GraphQLEnumValue(colors.BLUE),
+        }
+
     def defines_an_enum_type_with_a_description():
         description = "nice enum"
         enum_type = GraphQLEnumType(

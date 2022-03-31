@@ -6,19 +6,19 @@ a query language for APIs created by Facebook.
 
 [![PyPI version](https://badge.fury.io/py/graphql-core.svg)](https://badge.fury.io/py/graphql-core)
 [![Documentation Status](https://readthedocs.org/projects/graphql-core-3/badge/)](https://graphql-core-3.readthedocs.io)
-[![Build Status](https://travis-ci.com/graphql-python/graphql-core.svg?branch=main)](https://travis-ci.com/graphql-python/graphql-core)
-[![Coverage Status](https://codecov.io/gh/graphql-python/graphql-core/branch/main/graph/badge.svg)](https://codecov.io/gh/graphql-python/graphql-core)
+![Test Status](https://github.com/graphql-python/graphql-core/actions/workflows/test.yml/badge.svg)
+![Lint Status](https://github.com/graphql-python/graphql-core/actions/workflows/lint.yml/badge.svg)
 [![Dependency Updates](https://pyup.io/repos/github/graphql-python/graphql-core/shield.svg)](https://pyup.io/repos/github/graphql-python/graphql-core/)
 [![Python 3 Status](https://pyup.io/repos/github/graphql-python/graphql-core/python-3-shield.svg)](https://pyup.io/repos/github/graphql-python/graphql-core/)
 [![Code Style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/ambv/black)
 
-The current version 3.1.7 of GraphQL-core is up-to-date with GraphQL.js version 15.8.0.
+The current version 3.2.0 of GraphQL-core is up-to-date with GraphQL.js version 16.2.0.
 
 An extensive test suite with over 2300 unit tests and 100% coverage comprises a
 replication of the complete test suite of GraphQL.js, making sure this port is
 reliable and compatible with GraphQL.js.
 
-Note that for various reasons, GraphQL-core does not use SemVer like GraphQL.js. Increases in the major version of GraphQL.js are reflected in the minor version of GraphQL-core instead. This means there can be breaking changes in the API when the minor version changes, and only patch releases are fully backward compatible. Therefore, we recommend something like `=~ 3.1.0` as version specifier when including GraphQL-core as a dependency.
+Note that for various reasons, GraphQL-core does not use SemVer like GraphQL.js. Increases in the major version of GraphQL.js are reflected in the minor version of GraphQL-core instead. This means there can be breaking changes in the API when the minor version changes, and only patch releases are fully backward compatible. Therefore, we recommend something like `=~ 3.2.0` as version specifier when including GraphQL-core as a dependency.
 
 
 ## Documentation
@@ -98,9 +98,9 @@ Then, serve the result of a query against that type schema.
 ```python
 from graphql import graphql_sync
 
-query = '{ hello }'
+source = '{ hello }'
 
-print(graphql_sync(schema, query))
+print(graphql_sync(schema, source))
 ```
 
 This runs a query fetching the one field defined, and then prints the result:
@@ -115,9 +115,9 @@ semantically valid before executing it, reporting errors otherwise.
 ```python
 from graphql import graphql_sync
 
-query = '{ BoyHowdy }'
+source = '{ BoyHowdy }'
 
-print(graphql_sync(schema, query))
+print(graphql_sync(schema, source))
 ```
 
 Because we queried a non-existing field, we will get the following result:

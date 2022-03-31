@@ -59,6 +59,7 @@ Un-modifiers
 
 Definitions
 ^^^^^^^^^^^
+
 .. autoclass:: GraphQLEnumType
 .. autoclass:: GraphQLInputObjectType
 .. autoclass:: GraphQLInterfaceType
@@ -74,6 +75,7 @@ Type Wrappers
 
 Types
 ^^^^^
+
 .. autoclass:: GraphQLAbstractType
 .. autoclass:: GraphQLArgument
 .. autoclass:: GraphQLArgumentMap
@@ -170,7 +172,13 @@ Definitions
 .. autoclass:: GraphQLInt
 .. autoclass:: GraphQLString
 
-A tuple with all specified directives is available as :data:`specified_directives`.
+.. data:: GRAPHQL_MAX_INT
+
+   Maximum possible Int value as per GraphQL Spec (32-bit signed integer)
+
+.. data:: GRAPHQL_MIN_INT
+
+   Minimum possible Int value as per GraphQL Spec (32-bit signed integer)
 
 
 Schema
@@ -203,6 +211,12 @@ Assertions
 
 Other
 -----
+
+Thunk Handling
+^^^^^^^^^^^^^^
+
+.. autofunction:: resolve_thunk
+
 
 Assertions
 ^^^^^^^^^^

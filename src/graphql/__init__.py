@@ -189,6 +189,8 @@ from .utilities import (
     print_introspection_schema,
     # Create a GraphQLType from a GraphQL language AST.
     type_from_ast,
+    # Convert a language AST to a dictionary.
+    ast_to_dict,
     # Create a Python value from a GraphQL language AST with a Type.
     value_from_ast,
     # Create a Python value from a GraphQL language AST without a Type.
@@ -245,6 +247,9 @@ from .type import (
     GraphQLString,
     GraphQLBoolean,
     GraphQLID,
+    # Int boundaries constants
+    GRAPHQL_MAX_INT,
+    GRAPHQL_MIN_INT,
     # Built-in Directives defined by the Spec
     specified_directives,
     GraphQLIncludeDirective,
@@ -309,6 +314,8 @@ from .type import (
     # Un-modifiers
     get_nullable_type,
     get_named_type,
+    # Thunk handling
+    resolve_thunk,
     # Validate GraphQL schema.
     validate_schema,
     assert_valid_schema,
@@ -346,6 +353,20 @@ from .type import (
     GraphQLResolveInfo,
     ResponsePath,
     GraphQLTypeResolver,
+    # Keyword args
+    GraphQLArgumentKwargs,
+    GraphQLDirectiveKwargs,
+    GraphQLEnumTypeKwargs,
+    GraphQLEnumValueKwargs,
+    GraphQLFieldKwargs,
+    GraphQLInputFieldKwargs,
+    GraphQLInputObjectTypeKwargs,
+    GraphQLInterfaceTypeKwargs,
+    GraphQLNamedTypeKwargs,
+    GraphQLObjectTypeKwargs,
+    GraphQLScalarTypeKwargs,
+    GraphQLSchemaKwargs,
+    GraphQLUnionTypeKwargs,
 )
 
 # Validate GraphQL queries.
@@ -455,6 +476,8 @@ __all__ = [
     "GraphQLString",
     "GraphQLBoolean",
     "GraphQLID",
+    "GRAPHQL_MAX_INT",
+    "GRAPHQL_MIN_INT",
     "specified_directives",
     "GraphQLIncludeDirective",
     "GraphQLSkipDirective",
@@ -511,6 +534,7 @@ __all__ = [
     "assert_named_type",
     "get_nullable_type",
     "get_named_type",
+    "resolve_thunk",
     "validate_schema",
     "assert_valid_schema",
     "assert_name",
@@ -545,6 +569,19 @@ __all__ = [
     "GraphQLResolveInfo",
     "ResponsePath",
     "GraphQLTypeResolver",
+    "GraphQLArgumentKwargs",
+    "GraphQLDirectiveKwargs",
+    "GraphQLEnumTypeKwargs",
+    "GraphQLEnumValueKwargs",
+    "GraphQLFieldKwargs",
+    "GraphQLInputFieldKwargs",
+    "GraphQLInputObjectTypeKwargs",
+    "GraphQLInterfaceTypeKwargs",
+    "GraphQLNamedTypeKwargs",
+    "GraphQLObjectTypeKwargs",
+    "GraphQLScalarTypeKwargs",
+    "GraphQLSchemaKwargs",
+    "GraphQLUnionTypeKwargs",
     "Source",
     "get_location",
     "print_location",
@@ -717,6 +754,7 @@ __all__ = [
     "value_from_ast",
     "value_from_ast_untyped",
     "ast_from_value",
+    "ast_to_dict",
     "TypeInfo",
     "coerce_input_value",
     "concat_ast",

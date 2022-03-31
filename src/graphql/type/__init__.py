@@ -12,6 +12,8 @@ from .schema import (
     assert_schema,
     # GraphQL Schema definition
     GraphQLSchema,
+    # Keyword Args
+    GraphQLSchemaKwargs,
 )
 
 # Uphold the spec rules about naming.
@@ -59,6 +61,8 @@ from .definition import (
     # Un-modifiers
     get_nullable_type,
     get_named_type,
+    # Thunk handling
+    resolve_thunk,
     # Definitions
     GraphQLScalarType,
     GraphQLObjectType,
@@ -95,6 +99,18 @@ from .definition import (
     GraphQLScalarSerializer,
     GraphQLScalarValueParser,
     GraphQLScalarLiteralParser,
+    # Keyword Args
+    GraphQLArgumentKwargs,
+    GraphQLEnumTypeKwargs,
+    GraphQLEnumValueKwargs,
+    GraphQLFieldKwargs,
+    GraphQLInputFieldKwargs,
+    GraphQLInputObjectTypeKwargs,
+    GraphQLInterfaceTypeKwargs,
+    GraphQLNamedTypeKwargs,
+    GraphQLObjectTypeKwargs,
+    GraphQLScalarTypeKwargs,
+    GraphQLUnionTypeKwargs,
     # Resolvers
     GraphQLFieldResolver,
     GraphQLTypeResolver,
@@ -116,6 +132,8 @@ from .directives import (
     GraphQLSkipDirective,
     GraphQLDeprecatedDirective,
     GraphQLSpecifiedByDirective,
+    # Keyword Args
+    GraphQLDirectiveKwargs,
     # Constant Deprecation Reason
     DEFAULT_DEPRECATION_REASON,
 )
@@ -131,6 +149,9 @@ from .scalars import (
     GraphQLString,
     GraphQLBoolean,
     GraphQLID,
+    # Int boundaries constants
+    GRAPHQL_MAX_INT,
+    GRAPHQL_MIN_INT,
 )
 
 from .introspection import (
@@ -155,6 +176,7 @@ __all__ = [
     "assert_name",
     "assert_enum_value_name",
     "GraphQLSchema",
+    "GraphQLSchemaKwargs",
     "is_type",
     "is_scalar_type",
     "is_object_type",
@@ -193,6 +215,7 @@ __all__ = [
     "assert_named_type",
     "get_nullable_type",
     "get_named_type",
+    "resolve_thunk",
     "GraphQLScalarType",
     "GraphQLObjectType",
     "GraphQLInterfaceType",
@@ -228,6 +251,17 @@ __all__ = [
     "GraphQLScalarSerializer",
     "GraphQLScalarValueParser",
     "GraphQLScalarLiteralParser",
+    "GraphQLArgumentKwargs",
+    "GraphQLEnumTypeKwargs",
+    "GraphQLEnumValueKwargs",
+    "GraphQLFieldKwargs",
+    "GraphQLInputFieldKwargs",
+    "GraphQLInputObjectTypeKwargs",
+    "GraphQLInterfaceTypeKwargs",
+    "GraphQLNamedTypeKwargs",
+    "GraphQLObjectTypeKwargs",
+    "GraphQLScalarTypeKwargs",
+    "GraphQLUnionTypeKwargs",
     "GraphQLFieldResolver",
     "GraphQLTypeResolver",
     "GraphQLIsTypeOfFn",
@@ -242,6 +276,7 @@ __all__ = [
     "GraphQLSkipDirective",
     "GraphQLDeprecatedDirective",
     "GraphQLSpecifiedByDirective",
+    "GraphQLDirectiveKwargs",
     "DEFAULT_DEPRECATION_REASON",
     "is_specified_scalar_type",
     "specified_scalar_types",
@@ -250,6 +285,8 @@ __all__ = [
     "GraphQLString",
     "GraphQLBoolean",
     "GraphQLID",
+    "GRAPHQL_MAX_INT",
+    "GRAPHQL_MIN_INT",
     "is_introspection_type",
     "introspection_types",
     "TypeKind",

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "graphql-core"
-version = "3.2.0rc4"
+version = "3.2.0"
 description = """
 GraphQL-core is a Python port of GraphQL.js,
  the JavaScript reference implementation for GraphQL."""
@@ -43,21 +43,24 @@ packages = [
 
 [tool.poetry.dependencies]
 python = "^3.6"
+typing-extensions = { version = "^4.0", python = "<3.8" }
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2"
-pytest-asyncio = ">=0.16,<1"
+pytest-asyncio = [
+    {version=">=0.17,<1", python = ">=3.7" },
+    {version=">=0.16,<0.17", python = "<3.7" },
+]
 pytest-benchmark = "^3.4"
 pytest-cov = "^3.0"
 pytest-describe = "^2.0"
 pytest-timeout = "^2.0"
-typing-extensions = { version = "^4.0", python = "<3.8" }
 black = [
-    {version = "21.12b0", python = ">=3.6.2"},
+    {version = "22.1.0", python = ">=3.6.2"},
     {version = "20.8b1", python = "<3.6.2"}
 ]
 flake8 = "^4.0"
-mypy = "0.930"
+mypy = "0.931"
 sphinx = "^4.3"
 sphinx_rtd_theme = ">=1,<2"
 check-manifest = ">=0.47,<1"
