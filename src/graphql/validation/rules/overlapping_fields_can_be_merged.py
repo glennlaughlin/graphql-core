@@ -1,15 +1,15 @@
 from itertools import chain
-from typing import Any, Collection, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from ...error import GraphQLError
 from ...language import (
-    ArgumentNode,
     FieldNode,
     FragmentDefinitionNode,
     FragmentSpreadNode,
     InlineFragmentNode,
+    ObjectFieldNode,
+    ObjectValueNode,
     SelectionSetNode,
-    ValueNode,
     print_ast,
 )
 from ...type import (
@@ -27,6 +27,7 @@ from ...type import (
     is_object_type,
 )
 from ...utilities import type_from_ast
+from ...utilities.sort_value_node import sort_value_node
 from . import ValidationContext, ValidationRule
 
 MYPY = False
@@ -550,7 +551,7 @@ def find_conflict(
             )
 
         # Two field calls must have the same arguments.
-        if not same_arguments(node1.arguments or [], node2.arguments or []):
+        if stringify_arguments(node1) != stringify_arguments(node2):
             return (response_name, "they have differing arguments"), [node1], [node2]
 
     if type1 and type2 and do_types_conflict(type1, type2):
@@ -581,24 +582,14 @@ def find_conflict(
     return None  # no conflict
 
 
-def same_arguments(
-    arguments1: Collection[ArgumentNode], arguments2: Collection[ArgumentNode]
-) -> bool:
-    if len(arguments1) != len(arguments2):
-        return False
-    for argument1 in arguments1:
-        for argument2 in arguments2:
-            if argument2.name.value == argument1.name.value:
-                if not same_value(argument1.value, argument2.value):
-                    return False
-                break
-        else:
-            return False
-    return True
-
-
-def same_value(value1: ValueNode, value2: ValueNode) -> bool:
-    return print_ast(value1) == print_ast(value2)
+def stringify_arguments(field_node: FieldNode) -> str:
+    input_object_with_args = ObjectValueNode(
+        fields=tuple(
+            ObjectFieldNode(name=arg_node.name, value=arg_node.value)
+            for arg_node in field_node.arguments
+        )
+    )
+    return print_ast(sort_value_node(input_object_with_args))
 
 
 def do_types_conflict(type1: GraphQLOutputType, type2: GraphQLOutputType) -> bool:

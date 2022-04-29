@@ -30,7 +30,7 @@ from ..utilities.coerce_input_value import coerce_input_value
 from ..utilities.type_from_ast import type_from_ast
 from ..utilities.value_from_ast import value_from_ast
 
-__all__ = ["get_variable_values", "get_argument_values", "get_directive_values"]
+__all__ = ["get_argument_values", "get_directive_values", "get_variable_values"]
 
 
 CoercedVariableValues = Union[List[GraphQLError], Dict[str, Any]]
@@ -47,8 +47,6 @@ def get_variable_values(
     Prepares a dict of variable values of the correct type based on the provided
     variable definitions and arbitrary input. If the input cannot be parsed to match
     the variable definitions, a GraphQLError will be raised.
-
-    For internal use only.
     """
     errors: List[GraphQLError] = []
 
@@ -153,8 +151,6 @@ def get_argument_values(
 
     Prepares a dict of argument values given a list of argument definitions and list
     of argument AST nodes.
-
-    For internal use only.
     """
     coerced_values: Dict[str, Any] = {}
     arg_node_map = {arg.name.value: arg for arg in node.arguments or []}

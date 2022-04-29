@@ -47,6 +47,27 @@ def describe_graphql_error():
         assert e.__traceback__ is None
         assert str(e) == "msg"
 
+    def can_pass_positional_and_keyword_arguments():
+        e1 = GraphQLError(
+            "msg",
+            [field_node],
+            source,
+            [1, 2, 3],
+            ["a", "b", "c"],
+            Exception("test"),
+            {"foo": "bar"},
+        )
+        e2 = GraphQLError(
+            message="msg",
+            nodes=[field_node],
+            source=source,
+            positions=[1, 2, 3],
+            path=["a", "b", "c"],
+            original_error=Exception("test"),
+            extensions={"foo": "bar"},
+        )
+        assert e1 == e2
+
     def formatted_dict_has_only_keys_prescribed_in_the_spec():
         e = GraphQLError(
             "msg",
@@ -388,4 +409,21 @@ def describe_formatted():
         assert error.formatted == {
             "message": "msg",
             "extensions": {"foo": "bar"},
+        }
+
+    def can_be_created_from_dict():
+        args = dict(
+            nodes=[operation_node],
+            source=source,
+            positions=[6],
+            path=["path", 2, "a"],
+            original_error=Exception("I like turtles"),
+            extensions=dict(hee="I like turtles"),
+        )
+        error = GraphQLError("msg", **args)  # type: ignore
+        assert error.formatted == {
+            "message": "msg",
+            "locations": [{"column": 5, "line": 2}],
+            "path": ["path", 2, "a"],
+            "extensions": {"hee": "I like turtles"},
         }
