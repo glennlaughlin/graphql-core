@@ -38,7 +38,8 @@ packages = [
     { include = 'tox.ini', format = "sdist" },
     { include = 'setup.cfg', format = "sdist" },
     { include = 'CODEOWNERS', format = "sdist" },
-    { include = 'MANIFEST.in', format = "sdist" }
+    { include = 'MANIFEST.in', format = "sdist" },
+    { include = 'SECURITY.md', format = "sdist" }
 ]
 
 [tool.poetry.dependencies]
@@ -60,7 +61,7 @@ black = [
     {version = "20.8b1", python = "<3.6.2"}
 ]
 flake8 = "^4.0"
-mypy = "0.942"
+mypy = "0.960"
 sphinx = "^4.3"
 sphinx_rtd_theme = ">=1,<2"
 check-manifest = ">=0.48,<1"

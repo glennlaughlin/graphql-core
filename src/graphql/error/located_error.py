@@ -11,7 +11,7 @@ __all__ = ["located_error"]
 
 def located_error(
     original_error: Exception,
-    nodes: Optional[Union["None", Collection["Node"]]],
+    nodes: Optional[Union["None", Collection["Node"]]] = None,
     path: Optional[Collection[Union[str, int]]] = None,
 ) -> GraphQLError:
     """Located GraphQL Error
@@ -29,7 +29,7 @@ def located_error(
         return original_error
     try:
         # noinspection PyUnresolvedReferences
-        message = original_error.message  # type: ignore
+        message = str(original_error.message)  # type: ignore
     except AttributeError:
         message = str(original_error)
     try:
