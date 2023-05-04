@@ -1,29 +1,19 @@
+from __future__ import annotations  # Python < 3.10
+
 from copy import copy, deepcopy
-from typing import (
-    Any,
-    Collection,
-    Dict,
-    List,
-    NamedTuple,
-    Optional,
-    Set,
-    Tuple,
-    Union,
-    cast,
-)
+from typing import Any, Collection, Dict, List, NamedTuple, Optional, Set, Tuple, cast
 
 from ..error import GraphQLError
-from ..language import ast, OperationType
-from ..pyutils import inspect, is_collection, is_description
+from ..language import OperationType, ast
+from ..pyutils import inspect
 from .definition import (
     GraphQLAbstractType,
+    GraphQLCompositeType,
+    GraphQLField,
     GraphQLInterfaceType,
-    GraphQLInputObjectType,
     GraphQLNamedType,
     GraphQLObjectType,
-    GraphQLUnionType,
     GraphQLType,
-    GraphQLWrappingType,
     get_named_type,
     is_input_object_type,
     is_interface_type,
@@ -31,22 +21,32 @@ from .definition import (
     is_union_type,
     is_wrapping_type,
 )
-from .directives import GraphQLDirective, specified_directives, is_directive
-from .introspection import introspection_types
+from .directives import GraphQLDirective, is_directive, specified_directives
+from .introspection import (
+    SchemaMetaFieldDef,
+    TypeMetaFieldDef,
+    TypeNameMetaFieldDef,
+    introspection_types,
+)
+
 
 try:
     from typing import TypedDict
 except ImportError:  # Python < 3.8
     from typing_extensions import TypedDict
+try:
+    from typing import TypeAlias, TypeGuard
+except ImportError:  # Python < 3.10
+    from typing_extensions import TypeAlias, TypeGuard
+
 
 __all__ = ["GraphQLSchema", "GraphQLSchemaKwargs", "is_schema", "assert_schema"]
 
 
-TypeMap = Dict[str, GraphQLNamedType]
+TypeMap: TypeAlias = Dict[str, GraphQLNamedType]
 
 
 class InterfaceImplementations(NamedTuple):
-
     objects: List[GraphQLObjectType]
     interfaces: List[GraphQLInterfaceType]
 
@@ -148,65 +148,22 @@ class GraphQLSchema:
         """
         self._validation_errors = [] if assume_valid else None
 
-        # Check for common mistakes during construction to produce clear and early
-        # error messages, but we leave the specific tests for the validation.
-        if query and not isinstance(query, GraphQLType):
-            raise TypeError("Expected query to be a GraphQL type.")
-        if mutation and not isinstance(mutation, GraphQLType):
-            raise TypeError("Expected mutation to be a GraphQL type.")
-        if subscription and not isinstance(subscription, GraphQLType):
-            raise TypeError("Expected subscription to be a GraphQL type.")
-        if types is None:
-            types = []
-        else:
-            if not is_collection(types) or not all(
-                isinstance(type_, GraphQLType) for type_ in types
-            ):
-                raise TypeError(
-                    "Schema types must be specified as a collection of GraphQL types."
-                )
-        if directives is not None:
-            # noinspection PyUnresolvedReferences
-            if not is_collection(directives):
-                raise TypeError("Schema directives must be a collection.")
-            if not isinstance(directives, tuple):
-                directives = tuple(directives)
-        if description is not None and not is_description(description):
-            raise TypeError("Schema description must be a string.")
-        if extensions is None:
-            extensions = {}
-        elif not isinstance(extensions, dict) or not all(
-            isinstance(key, str) for key in extensions
-        ):
-            raise TypeError("Schema extensions must be a dictionary with string keys.")
-        if ast_node and not isinstance(ast_node, ast.SchemaDefinitionNode):
-            raise TypeError("Schema AST node must be a SchemaDefinitionNode.")
-        if extension_ast_nodes:
-            if not is_collection(extension_ast_nodes) or not all(
-                isinstance(node, ast.SchemaExtensionNode)
-                for node in extension_ast_nodes
-            ):
-                raise TypeError(
-                    "Schema extension AST nodes must be specified"
-                    " as a collection of SchemaExtensionNode instances."
-                )
-            if not isinstance(extension_ast_nodes, tuple):
-                extension_ast_nodes = tuple(extension_ast_nodes)
-        else:
-            extension_ast_nodes = ()
-
         self.description = description
-        self.extensions = extensions
+        self.extensions = extensions or {}
         self.ast_node = ast_node
-        self.extension_ast_nodes = extension_ast_nodes
+        self.extension_ast_nodes = (
+            tuple(extension_ast_nodes) if extension_ast_nodes else ()
+        )
         self.query_type = query
         self.mutation_type = mutation
         self.subscription_type = subscription
         # Provide specified directives (e.g. @include and @skip) by default
-        self.directives = specified_directives if directives is None else directives
+        self.directives = (
+            specified_directives if directives is None else tuple(directives)
+        )
 
-        # To preserve order of user-provided types, we add first to add them to
-        # the set of "collected" types, so `collect_referenced_types` ignore them.
+        # To preserve order of user-provided types, we first add them to the set
+        # of "collected" types, so `collect_referenced_types` ignores them.
         if types:
             all_referenced_types = TypeSet.with_initial_types(types)
             collect_referenced_types = all_referenced_types.collect_referenced_types
@@ -259,14 +216,13 @@ class GraphQLSchema:
                     "Schema must contain uniquely named types"
                     f" but contains multiple types named '{type_name}'."
                 )
+
             type_map[type_name] = named_type
 
             if is_interface_type(named_type):
-                named_type = cast(GraphQLInterfaceType, named_type)
                 # Store implementations by interface.
                 for iface in named_type.interfaces:
                     if is_interface_type(iface):
-                        iface = cast(GraphQLInterfaceType, iface)
                         if iface.name in implementations_map:
                             implementations = implementations_map[iface.name]
                         else:
@@ -276,11 +232,9 @@ class GraphQLSchema:
 
                         implementations.interfaces.append(named_type)
             elif is_object_type(named_type):
-                named_type = cast(GraphQLObjectType, named_type)
                 # Store implementations by objects.
                 for iface in named_type.interfaces:
                     if is_interface_type(iface):
-                        iface = cast(GraphQLInterfaceType, iface)
                         if iface.name in implementations_map:
                             implementations = implementations_map[iface.name]
                         else:
@@ -304,14 +258,14 @@ class GraphQLSchema:
             assume_valid=self._validation_errors is not None,
         )
 
-    def __copy__(self) -> "GraphQLSchema":  # pragma: no cover
+    def __copy__(self) -> GraphQLSchema:  # pragma: no cover
         return self.__class__(**self.to_kwargs())
 
-    def __deepcopy__(self, memo_: Dict) -> "GraphQLSchema":
+    def __deepcopy__(self, memo_: Dict) -> GraphQLSchema:
         from ..type import (
             is_introspection_type,
-            is_specified_scalar_type,
             is_specified_directive,
+            is_specified_scalar_type,
         )
 
         type_map: TypeMap = {
@@ -352,7 +306,7 @@ class GraphQLSchema:
     ) -> List[GraphQLObjectType]:
         """Get list of all possible concrete types for given abstract type."""
         return (
-            cast(GraphQLUnionType, abstract_type).types
+            abstract_type.types
             if is_union_type(abstract_type)
             else self.get_implementations(
                 cast(GraphQLInterfaceType, abstract_type)
@@ -377,7 +331,7 @@ class GraphQLSchema:
             types = set()
             add = types.add
             if is_union_type(abstract_type):
-                for type_ in cast(GraphQLUnionType, abstract_type).types:
+                for type_ in abstract_type.types:
                     add(type_.name)
             else:
                 implementations = self.get_implementations(
@@ -396,6 +350,35 @@ class GraphQLSchema:
                 return directive
         return None
 
+    def get_field(
+        self, parent_type: GraphQLCompositeType, field_name: str
+    ) -> Optional[GraphQLField]:
+        """Get field of a given type with the given name.
+
+        This method looks up the field on the given type definition.
+        It has special casing for the three introspection fields, `__schema`,
+        `__type` and `__typename`.
+
+        `__typename` is special because it can always be queried as a field, even
+        in situations where no other fields are allowed, like on a Union.
+
+        `__schema` and `__type` could get automatically added to the query type,
+        but that would require mutating type definitions, which would cause issues.
+        """
+        if field_name == "__schema":
+            return SchemaMetaFieldDef if self.query_type is parent_type else None
+        if field_name == "__type":
+            return TypeMetaFieldDef if self.query_type is parent_type else None
+        if field_name == "__typename":
+            return TypeNameMetaFieldDef
+
+        # this function is part of a "hot" path inside executor and to assume presence
+        # of 'fields' is faster than to use `not is_union_type`
+        try:
+            return parent_type.fields[field_name]  # type: ignore
+        except (AttributeError, KeyError):
+            return None
+
     @property
     def validation_errors(self) -> Optional[List[GraphQLError]]:
         return self._validation_errors
@@ -405,7 +388,7 @@ class TypeSet(Dict[GraphQLNamedType, None]):
     """An ordered set of types that can be collected starting from initial types."""
 
     @classmethod
-    def with_initial_types(cls, types: Collection[GraphQLType]) -> "TypeSet":
+    def with_initial_types(cls, types: Collection[GraphQLType]) -> TypeSet:
         return cast(TypeSet, super().fromkeys(types))
 
     def collect_referenced_types(self, type_: GraphQLType) -> None:
@@ -419,13 +402,9 @@ class TypeSet(Dict[GraphQLNamedType, None]):
 
         collect_referenced_types = self.collect_referenced_types
         if is_union_type(named_type):
-            named_type = cast(GraphQLUnionType, named_type)
             for member_type in named_type.types:
                 collect_referenced_types(member_type)
         elif is_object_type(named_type) or is_interface_type(named_type):
-            named_type = cast(
-                Union[GraphQLObjectType, GraphQLInterfaceType], named_type
-            )
             for interface_type in named_type.interfaces:
                 collect_referenced_types(interface_type)
 
@@ -434,12 +413,11 @@ class TypeSet(Dict[GraphQLNamedType, None]):
                 for arg in field.args.values():
                     collect_referenced_types(arg.type)
         elif is_input_object_type(named_type):
-            named_type = cast(GraphQLInputObjectType, named_type)
             for field in named_type.fields.values():
                 collect_referenced_types(field.type)
 
 
-def is_schema(schema: Any) -> bool:
+def is_schema(schema: Any) -> TypeGuard[GraphQLSchema]:
     """Test if the given value is a GraphQL schema."""
     return isinstance(schema, GraphQLSchema)
 
@@ -447,13 +425,12 @@ def is_schema(schema: Any) -> bool:
 def assert_schema(schema: Any) -> GraphQLSchema:
     if not is_schema(schema):
         raise TypeError(f"Expected {inspect(schema)} to be a GraphQL schema.")
-    return cast(GraphQLSchema, schema)
+    return schema
 
 
 def remapped_type(type_: GraphQLType, type_map: TypeMap) -> GraphQLType:
     """Get a copy of the given type that uses this type map."""
     if is_wrapping_type(type_):
-        type_ = cast(GraphQLWrappingType, type_)
         return type_.__class__(remapped_type(type_.of_type, type_map))
     type_ = cast(GraphQLNamedType, type_)
     return type_map.get(type_.name, type_)
@@ -462,12 +439,10 @@ def remapped_type(type_: GraphQLType, type_map: TypeMap) -> GraphQLType:
 def remap_named_type(type_: GraphQLNamedType, type_map: TypeMap) -> None:
     """Change all references in the given named type to use this type map."""
     if is_union_type(type_):
-        type_ = cast(GraphQLUnionType, type_)
         type_.types = [
             type_map.get(member_type.name, member_type) for member_type in type_.types
         ]
     elif is_object_type(type_) or is_interface_type(type_):
-        type_ = cast(Union[GraphQLObjectType, GraphQLInterfaceType], type_)
         type_.interfaces = [
             type_map.get(interface_type.name, interface_type)
             for interface_type in type_.interfaces
@@ -483,7 +458,6 @@ def remap_named_type(type_: GraphQLNamedType, type_map: TypeMap) -> None:
                 args[arg_name] = arg
             fields[field_name] = field
     elif is_input_object_type(type_):
-        type_ = cast(GraphQLInputObjectType, type_)
         fields = type_.fields
         for field_name, field in fields.items():
             field = copy(field)

@@ -1,8 +1,8 @@
 from itertools import chain
-from typing import cast, Callable, Collection, Dict, List, Union
+from typing import Callable, Collection, Dict, List, Union, cast
 
 from ..language import DirectiveLocation, parse_value
-from ..pyutils import inspect, Undefined
+from ..pyutils import Undefined, inspect
 from ..type import (
     GraphQLArgument,
     GraphQLDirective,
@@ -11,13 +11,11 @@ from ..type import (
     GraphQLField,
     GraphQLInputField,
     GraphQLInputObjectType,
-    GraphQLInputType,
     GraphQLInterfaceType,
     GraphQLList,
     GraphQLNamedType,
     GraphQLNonNull,
     GraphQLObjectType,
-    GraphQLOutputType,
     GraphQLScalarType,
     GraphQLSchema,
     GraphQLType,
@@ -35,9 +33,9 @@ from .get_introspection_query import (
     IntrospectionDirective,
     IntrospectionEnumType,
     IntrospectionField,
-    IntrospectionInterfaceType,
     IntrospectionInputObjectType,
     IntrospectionInputValue,
+    IntrospectionInterfaceType,
     IntrospectionObjectType,
     IntrospectionQuery,
     IntrospectionScalarType,
@@ -46,6 +44,7 @@ from .get_introspection_query import (
     IntrospectionUnionType,
 )
 from .value_from_ast import value_from_ast
+
 
 __all__ = ["build_client_schema"]
 
@@ -64,6 +63,8 @@ def build_client_schema(
     This function expects a complete introspection result. Don't forget to check the
     "errors" field of a server response before calling this function.
     """
+    # Even though the `introspection` argument is typed, in most cases it's received
+    # as an untyped value from the server, so we will do an additional check here.
     if not isinstance(introspection, dict) or not isinstance(
         introspection.get("__schema"), dict
     ):
@@ -133,11 +134,15 @@ def build_client_schema(
     def build_scalar_def(
         scalar_introspection: IntrospectionScalarType,
     ) -> GraphQLScalarType:
-        return GraphQLScalarType(
-            name=scalar_introspection["name"],
-            description=scalar_introspection.get("description"),
-            specified_by_url=scalar_introspection.get("specifiedByURL"),
-        )
+        name = scalar_introspection["name"]
+        try:
+            return cast(GraphQLScalarType, GraphQLScalarType.reserved_types[name])
+        except KeyError:
+            return GraphQLScalarType(
+                name=name,
+                description=scalar_introspection.get("description"),
+                specified_by_url=scalar_introspection.get("specifiedByURL"),
+            )
 
     def build_implementations_list(
         implementing_introspection: Union[
@@ -160,12 +165,16 @@ def build_client_schema(
     def build_object_def(
         object_introspection: IntrospectionObjectType,
     ) -> GraphQLObjectType:
-        return GraphQLObjectType(
-            name=object_introspection["name"],
-            description=object_introspection.get("description"),
-            interfaces=lambda: build_implementations_list(object_introspection),
-            fields=lambda: build_field_def_map(object_introspection),
-        )
+        name = object_introspection["name"]
+        try:
+            return cast(GraphQLObjectType, GraphQLObjectType.reserved_types[name])
+        except KeyError:
+            return GraphQLObjectType(
+                name=name,
+                description=object_introspection.get("description"),
+                interfaces=lambda: build_implementations_list(object_introspection),
+                fields=lambda: build_field_def_map(object_introspection),
+            )
 
     def build_interface_def(
         interface_introspection: IntrospectionInterfaceType,
@@ -199,18 +208,22 @@ def build_client_schema(
                 "Introspection result missing enumValues:"
                 f" {inspect(enum_introspection)}."
             )
-        return GraphQLEnumType(
-            name=enum_introspection["name"],
-            description=enum_introspection.get("description"),
-            values={
-                value_introspect["name"]: GraphQLEnumValue(
-                    value=value_introspect["name"],
-                    description=value_introspect.get("description"),
-                    deprecation_reason=value_introspect.get("deprecationReason"),
-                )
-                for value_introspect in enum_introspection["enumValues"]
-            },
-        )
+        name = enum_introspection["name"]
+        try:
+            return cast(GraphQLEnumType, GraphQLEnumType.reserved_types[name])
+        except KeyError:
+            return GraphQLEnumType(
+                name=name,
+                description=enum_introspection.get("description"),
+                values={
+                    value_introspect["name"]: GraphQLEnumValue(
+                        value=value_introspect["name"],
+                        description=value_introspect.get("description"),
+                        deprecation_reason=value_introspect.get("deprecationReason"),
+                    )
+                    for value_introspect in enum_introspection["enumValues"]
+                },
+            )
 
     def build_input_object_def(
         input_object_introspection: IntrospectionInputObjectType,
@@ -257,7 +270,6 @@ def build_client_schema(
                 "Introspection must provide output type for fields,"
                 f" but received: {inspect(type_)}."
             )
-        type_ = cast(GraphQLOutputType, type_)
 
         args_introspection = field_introspection.get("args")
         if args_introspection is None:
@@ -291,7 +303,6 @@ def build_client_schema(
                 "Introspection must provide input type for arguments,"
                 f" but received: {inspect(type_)}."
             )
-        type_ = cast(GraphQLInputType, type_)
 
         default_value_introspection = argument_introspection.get("defaultValue")
         default_value = (
@@ -326,7 +337,6 @@ def build_client_schema(
                 "Introspection must provide input type for input fields,"
                 f" but received: {inspect(type_)}."
             )
-        type_ = cast(GraphQLInputType, type_)
 
         default_value_introspection = input_value_introspection.get("defaultValue")
         default_value = (

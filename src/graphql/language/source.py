@@ -2,7 +2,17 @@ from typing import Any
 
 from .location import SourceLocation
 
+
+try:
+    from typing import TypeGuard
+except ImportError:  # Python < 3.10
+    from typing_extensions import TypeGuard
+
+
 __all__ = ["Source", "is_source"]
+
+DEFAULT_NAME = "GraphQL request"
+DEFAULT_SOURCE_LOCATION = SourceLocation(1, 1)
 
 
 class Source:
@@ -14,8 +24,8 @@ class Source:
     def __init__(
         self,
         body: str,
-        name: str = "GraphQL request",
-        location_offset: SourceLocation = SourceLocation(1, 1),
+        name: str = DEFAULT_NAME,
+        location_offset: SourceLocation = DEFAULT_SOURCE_LOCATION,
     ) -> None:
         """Initialize source input.
 
@@ -62,7 +72,7 @@ class Source:
         return not self == other
 
 
-def is_source(source: Any) -> bool:
+def is_source(source: Any) -> TypeGuard[Source]:
     """Test if the given value is a Source object.
 
     For internal use only.

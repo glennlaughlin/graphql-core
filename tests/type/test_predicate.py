@@ -5,8 +5,8 @@ from pytest import raises
 from graphql.language import DirectiveLocation
 from graphql.type import (
     GraphQLArgument,
-    GraphQLDeprecatedDirective,
     GraphQLBoolean,
+    GraphQLDeprecatedDirective,
     GraphQLDirective,
     GraphQLEnumType,
     GraphQLFloat,
@@ -20,6 +20,7 @@ from graphql.type import (
     GraphQLNonNull,
     GraphQLObjectType,
     GraphQLScalarType,
+    GraphQLSchema,
     GraphQLSkipDirective,
     GraphQLString,
     GraphQLUnionType,
@@ -38,6 +39,7 @@ from graphql.type import (
     assert_object_type,
     assert_output_type,
     assert_scalar_type,
+    assert_schema,
     assert_type,
     assert_union_type,
     assert_wrapping_type,
@@ -53,19 +55,21 @@ from graphql.type import (
     is_leaf_type,
     is_list_type,
     is_named_type,
-    is_required_argument,
-    is_required_input_field,
     is_non_null_type,
     is_nullable_type,
     is_object_type,
     is_output_type,
+    is_required_argument,
+    is_required_input_field,
     is_scalar_type,
+    is_schema,
     is_specified_directive,
     is_specified_scalar_type,
     is_type,
     is_union_type,
     is_wrapping_type,
 )
+
 
 ObjectType = GraphQLObjectType("Object", {})
 InterfaceType = GraphQLInterfaceType("Interface", {})
@@ -536,3 +540,30 @@ def describe_type_predicates():
 
             def returns_false_for_custom_directive():
                 assert is_specified_directive(Directive) is False
+
+
+def describe_schema_predicates():
+    schema = GraphQLSchema()
+
+    def describe_is_schema_and_assert_schema():
+        def returns_true_for_schema():
+            assert is_schema(schema) is True
+            assert assert_schema(schema) is schema
+
+        def returns_false_for_schema_class_rather_than_instance():
+            assert is_schema(GraphQLSchema) is False
+            with raises(TypeError):
+                assert_schema(GraphQLSchema)
+
+        def returns_false_for_non_schema():
+            assert is_schema(EnumType) is False
+            with raises(TypeError):
+                assert_schema(EnumType)
+            assert is_schema(ScalarType) is False
+            with raises(TypeError):
+                assert_schema(ScalarType)
+
+        def return_false_for_random_garbage():
+            assert is_schema({"what": "is this"}) is False
+            with raises(TypeError):
+                assert_schema({"what": "is this"})

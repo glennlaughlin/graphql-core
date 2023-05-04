@@ -1,11 +1,17 @@
 from functools import partial, reduce
 from inspect import isfunction
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
-from typing import Callable, Iterator, Dict, List, Tuple, Any, Optional
+
+try:
+    from typing import TypeAlias
+except ImportError:  # Python < 3.10
+    from typing_extensions import TypeAlias
+
 
 __all__ = ["MiddlewareManager"]
 
-GraphQLFieldResolver = Callable[..., Any]
+GraphQLFieldResolver: TypeAlias = Callable[..., Any]
 
 
 class MiddlewareManager:

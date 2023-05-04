@@ -7,18 +7,16 @@ from ..language import (
     ValueNode,
     VariableNode,
 )
-from ..pyutils import inspect, Undefined
+from ..pyutils import Undefined, inspect
 from ..type import (
-    GraphQLInputObjectType,
     GraphQLInputType,
-    GraphQLList,
-    GraphQLNonNull,
     GraphQLScalarType,
     is_input_object_type,
     is_leaf_type,
     is_list_type,
     is_non_null_type,
 )
+
 
 __all__ = ["value_from_ast"]
 
@@ -69,14 +67,12 @@ def value_from_ast(
     if is_non_null_type(type_):
         if isinstance(value_node, NullValueNode):
             return Undefined
-        type_ = cast(GraphQLNonNull, type_)
         return value_from_ast(value_node, type_.of_type, variables)
 
     if isinstance(value_node, NullValueNode):
         return None  # This is explicitly returning the value None.
 
     if is_list_type(type_):
-        type_ = cast(GraphQLList, type_)
         item_type = type_.of_type
         if isinstance(value_node, ListValueNode):
             coerced_values: List[Any] = []
@@ -102,7 +98,6 @@ def value_from_ast(
     if is_input_object_type(type_):
         if not isinstance(value_node, ObjectValueNode):
             return Undefined
-        type_ = cast(GraphQLInputObjectType, type_)
         coerced_obj: Dict[str, Any] = {}
         fields = type_.fields
         field_nodes = {field.name.value: field for field in value_node.fields}

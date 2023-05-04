@@ -1,9 +1,10 @@
+import asyncio
 import re
 from typing import Any, Awaitable, cast
 
 from pytest import mark
 
-from graphql.execution import execute, execute_sync, ExecutionResult
+from graphql.execution import ExecutionResult, execute, execute_sync
 from graphql.language import parse
 from graphql.pyutils import AwaitableOrValue
 from graphql.type import (
@@ -15,6 +16,7 @@ from graphql.type import (
     GraphQLString,
 )
 from graphql.utilities import build_schema
+
 
 sync_error = RuntimeError("sync")
 sync_non_null_error = RuntimeError("syncNonNull")
@@ -145,7 +147,6 @@ def describe_execute_handles_non_nullable_types():
             )
 
     def describe_nulls_a_returned_object_that_contains_a_non_null_field():
-
         query = """
             {
               syncNest {
@@ -481,6 +482,7 @@ def describe_execute_handles_non_nullable_types():
         @mark.asyncio
         async def returns_null():
             result = await execute_sync_and_async(query, NullingData())
+            await asyncio.sleep(0)  # strangely needed to get coverage on Python 3.11
             assert result == (
                 None,
                 [
@@ -496,6 +498,7 @@ def describe_execute_handles_non_nullable_types():
         @mark.asyncio
         async def throws():
             result = await execute_sync_and_async(query, ThrowingData())
+            await asyncio.sleep(0)  # strangely needed to get coverage on Python 3.11
             assert result == (
                 None,
                 [
@@ -508,7 +511,6 @@ def describe_execute_handles_non_nullable_types():
             )
 
     def describe_handles_non_null_argument():
-
         # noinspection PyPep8Naming
         schema_with_non_null_arg = GraphQLSchema(
             GraphQLObjectType(

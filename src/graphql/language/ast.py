@@ -1,10 +1,19 @@
+from __future__ import annotations  # Python < 3.10
+
 from copy import copy, deepcopy
 from enum import Enum
-from typing import Any, Dict, List, Tuple, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+from ..pyutils import camel_to_snake
 from .source import Source
 from .token_kind import TokenKind
-from ..pyutils import camel_to_snake
+
+
+try:
+    from typing import TypeAlias
+except ImportError:  # Python < 3.10
+    from typing_extensions import TypeAlias
+
 
 __all__ = [
     "Location",
@@ -19,6 +28,10 @@ __all__ = [
     "SelectionSetNode",
     "SelectionNode",
     "FieldNode",
+    "NullabilityAssertionNode",
+    "NonNullAssertionNode",
+    "ErrorBoundaryNode",
+    "ListNullabilityOperatorNode",
     "ArgumentNode",
     "ConstArgumentNode",
     "FragmentSpreadNode",
@@ -90,8 +103,8 @@ class Token:
     value: Optional[str]
     # Tokens exist as nodes in a double-linked-list amongst all tokens including
     # ignored tokens. <SOF> is always the first node and <EOF> the last.
-    prev: Optional["Token"]
-    next: Optional["Token"]
+    prev: Optional[Token]
+    next: Optional[Token]
 
     def __init__(
         self,
@@ -137,7 +150,7 @@ class Token:
             (self.kind, self.start, self.end, self.line, self.column, self.value)
         )
 
-    def __copy__(self) -> "Token":
+    def __copy__(self) -> Token:
         """Create a shallow copy of the token"""
         token = self.__class__(
             self.kind,
@@ -150,7 +163,7 @@ class Token:
         token.prev = self.prev
         return token
 
-    def __deepcopy__(self, memo: Dict) -> "Token":
+    def __deepcopy__(self, memo: Dict) -> Token:
         """Allow only shallow copies to avoid recursion."""
         return copy(self)
 
@@ -231,7 +244,6 @@ class Location:
 
 
 class OperationType(Enum):
-
     QUERY = "query"
     MUTATION = "mutation"
     SUBSCRIPTION = "subscription"
@@ -250,8 +262,22 @@ QUERY_DOCUMENT_KEYS: Dict[str, Tuple[str, ...]] = {
     "variable_definition": ("variable", "type", "default_value", "directives"),
     "variable": ("name",),
     "selection_set": ("selections",),
-    "field": ("alias", "name", "arguments", "directives", "selection_set"),
+    "field": (
+        "alias",
+        "name",
+        "arguments",
+        "directives",
+        "selection_set",
+        # note: Client controlled Nullability is experimental and may be changed
+        # or removed in the future.
+        "nullability_assertion",
+    ),
     "argument": ("name", "value"),
+    # note: Client controlled Nullability is experimental and may be changed
+    # or removed in the future.
+    "list_nullability_operator": ("nullability_assertion",),
+    "non_null_assertion": ("nullability_assertion",),
+    "error_boundary": ("nullability_assertion",),
     "fragment_spread": ("name", "directives"),
     "inline_fragment": ("type_condition", "directives", "selection_set"),
     "fragment_definition": (
@@ -360,11 +386,11 @@ class Node:
             del self._hash
         super().__setattr__(key, value)
 
-    def __copy__(self) -> "Node":
+    def __copy__(self) -> Node:
         """Create a shallow copy of the node."""
         return self.__class__(**{key: getattr(self, key) for key in self.keys})
 
-    def __deepcopy__(self, memo: Dict) -> "Node":
+    def __deepcopy__(self, memo: Dict) -> Node:
         """Create a deep copy of the node"""
         # noinspection PyArgumentList
         return self.__class__(
@@ -410,7 +436,7 @@ class NameNode(Node):
 class DocumentNode(Node):
     __slots__ = ("definitions",)
 
-    definitions: Tuple["DefinitionNode", ...]
+    definitions: Tuple[DefinitionNode, ...]
 
 
 class DefinitionNode(Node):
@@ -421,9 +447,9 @@ class ExecutableDefinitionNode(DefinitionNode):
     __slots__ = "name", "directives", "variable_definitions", "selection_set"
 
     name: Optional[NameNode]
-    directives: Tuple["DirectiveNode", ...]
-    variable_definitions: Tuple["VariableDefinitionNode", ...]
-    selection_set: "SelectionSetNode"
+    directives: Tuple[DirectiveNode, ...]
+    variable_definitions: Tuple[VariableDefinitionNode, ...]
+    selection_set: SelectionSetNode
 
 
 class OperationDefinitionNode(ExecutableDefinitionNode):
@@ -435,43 +461,62 @@ class OperationDefinitionNode(ExecutableDefinitionNode):
 class VariableDefinitionNode(Node):
     __slots__ = "variable", "type", "default_value", "directives"
 
-    variable: "VariableNode"
-    type: "TypeNode"
-    default_value: Optional["ConstValueNode"]
-    directives: Tuple["ConstDirectiveNode", ...]
+    variable: VariableNode
+    type: TypeNode
+    default_value: Optional[ConstValueNode]
+    directives: Tuple[ConstDirectiveNode, ...]
 
 
 class SelectionSetNode(Node):
     __slots__ = ("selections",)
 
-    selections: Tuple["SelectionNode", ...]
+    selections: Tuple[SelectionNode, ...]
 
 
 class SelectionNode(Node):
     __slots__ = ("directives",)
 
-    directives: Tuple["DirectiveNode", ...]
+    directives: Tuple[DirectiveNode, ...]
 
 
 class FieldNode(SelectionNode):
-    __slots__ = "alias", "name", "arguments", "selection_set"
+    __slots__ = "alias", "name", "arguments", "nullability_assertion", "selection_set"
 
     alias: Optional[NameNode]
     name: NameNode
-    arguments: Tuple["ArgumentNode", ...]
+    arguments: Tuple[ArgumentNode, ...]
+    # Note: Client Controlled Nullability is experimental
+    # and may be changed or removed in the future.
+    nullability_assertion: NullabilityAssertionNode
     selection_set: Optional[SelectionSetNode]
+
+
+class NullabilityAssertionNode(Node):
+    __slots__ = ("nullability_assertion",)
+    nullability_assertion: Optional["NullabilityAssertionNode"]
+
+
+class ListNullabilityOperatorNode(NullabilityAssertionNode):
+    pass
+
+
+class NonNullAssertionNode(NullabilityAssertionNode):
+    nullability_assertion: ListNullabilityOperatorNode
+
+
+class ErrorBoundaryNode(NullabilityAssertionNode):
+    nullability_assertion: ListNullabilityOperatorNode
 
 
 class ArgumentNode(Node):
     __slots__ = "name", "value"
 
     name: NameNode
-    value: "ValueNode"
+    value: ValueNode
 
 
 class ConstArgumentNode(ArgumentNode):
-
-    value: "ConstValueNode"
+    value: ConstValueNode
 
 
 # Fragments
@@ -486,7 +531,7 @@ class FragmentSpreadNode(SelectionNode):
 class InlineFragmentNode(SelectionNode):
     __slots__ = "type_condition", "selection_set"
 
-    type_condition: "NamedTypeNode"
+    type_condition: NamedTypeNode
     selection_set: SelectionSetNode
 
 
@@ -494,7 +539,7 @@ class FragmentDefinitionNode(ExecutableDefinitionNode):
     __slots__ = ("type_condition",)
 
     name: NameNode
-    type_condition: "NamedTypeNode"
+    type_condition: NamedTypeNode
 
 
 # Values
@@ -552,19 +597,17 @@ class ListValueNode(ValueNode):
 
 
 class ConstListValueNode(ListValueNode):
-
-    values: Tuple["ConstValueNode", ...]
+    values: Tuple[ConstValueNode, ...]
 
 
 class ObjectValueNode(ValueNode):
     __slots__ = ("fields",)
 
-    fields: Tuple["ObjectFieldNode", ...]
+    fields: Tuple[ObjectFieldNode, ...]
 
 
 class ConstObjectValueNode(ObjectValueNode):
-
-    fields: Tuple["ConstObjectFieldNode", ...]
+    fields: Tuple[ConstObjectFieldNode, ...]
 
 
 class ObjectFieldNode(Node):
@@ -575,11 +618,10 @@ class ObjectFieldNode(Node):
 
 
 class ConstObjectFieldNode(ObjectFieldNode):
+    value: ConstValueNode
 
-    value: "ConstValueNode"
 
-
-ConstValueNode = Union[
+ConstValueNode: TypeAlias = Union[
     IntValueNode,
     FloatValueNode,
     StringValueNode,
@@ -602,7 +644,6 @@ class DirectiveNode(Node):
 
 
 class ConstDirectiveNode(DirectiveNode):
-
     arguments: Tuple[ConstArgumentNode, ...]
 
 
@@ -643,7 +684,7 @@ class SchemaDefinitionNode(TypeSystemDefinitionNode):
 
     description: Optional[StringValueNode]
     directives: Tuple[ConstDirectiveNode, ...]
-    operation_types: Tuple["OperationTypeDefinitionNode", ...]
+    operation_types: Tuple[OperationTypeDefinitionNode, ...]
 
 
 class OperationTypeDefinitionNode(Node):
@@ -675,7 +716,7 @@ class ObjectTypeDefinitionNode(TypeDefinitionNode):
 
     interfaces: Tuple[NamedTypeNode, ...]
     directives: Tuple[ConstDirectiveNode, ...]
-    fields: Tuple["FieldDefinitionNode", ...]
+    fields: Tuple[FieldDefinitionNode, ...]
 
 
 class FieldDefinitionNode(DefinitionNode):
@@ -684,7 +725,7 @@ class FieldDefinitionNode(DefinitionNode):
     description: Optional[StringValueNode]
     name: NameNode
     directives: Tuple[ConstDirectiveNode, ...]
-    arguments: Tuple["InputValueDefinitionNode", ...]
+    arguments: Tuple[InputValueDefinitionNode, ...]
     type: TypeNode
 
 
@@ -701,7 +742,7 @@ class InputValueDefinitionNode(DefinitionNode):
 class InterfaceTypeDefinitionNode(TypeDefinitionNode):
     __slots__ = "fields", "interfaces"
 
-    fields: Tuple["FieldDefinitionNode", ...]
+    fields: Tuple[FieldDefinitionNode, ...]
     directives: Tuple[ConstDirectiveNode, ...]
     interfaces: Tuple[NamedTypeNode, ...]
 
@@ -717,7 +758,7 @@ class EnumTypeDefinitionNode(TypeDefinitionNode):
     __slots__ = ("values",)
 
     directives: Tuple[ConstDirectiveNode, ...]
-    values: Tuple["EnumValueDefinitionNode", ...]
+    values: Tuple[EnumValueDefinitionNode, ...]
 
 
 class EnumValueDefinitionNode(DefinitionNode):
@@ -768,7 +809,7 @@ class TypeExtensionNode(TypeSystemDefinitionNode):
     directives: Tuple[ConstDirectiveNode, ...]
 
 
-TypeSystemExtensionNode = Union[SchemaExtensionNode, TypeExtensionNode]
+TypeSystemExtensionNode: TypeAlias = Union[SchemaExtensionNode, TypeExtensionNode]
 
 
 class ScalarTypeExtensionNode(TypeExtensionNode):

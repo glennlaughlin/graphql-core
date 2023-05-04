@@ -1,12 +1,14 @@
-from typing import cast, Any, Dict
+from typing import Any, Dict, cast
 
 from graphql.language import DirectiveLocation
 from graphql.type import (
     GraphQLArgument,
     GraphQLBoolean,
+    GraphQLDirective,
     GraphQLEnumType,
     GraphQLField,
     GraphQLFloat,
+    GraphQLInputField,
     GraphQLInputObjectType,
     GraphQLInt,
     GraphQLInterfaceType,
@@ -17,13 +19,11 @@ from graphql.type import (
     GraphQLSchema,
     GraphQLString,
     GraphQLUnionType,
-    GraphQLInputField,
-    GraphQLDirective,
 )
 from graphql.utilities import (
     build_schema,
-    print_schema,
     print_introspection_schema,
+    print_schema,
     print_value,
 )
 
@@ -691,7 +691,7 @@ def describe_type_system_printer():
               mutationType: __Type
 
               """
-              If this server support subscription, the type that subscription operations will be rooted at.
+              If this server supports subscription, the type that subscription operations will be rooted at.
               """
               subscriptionType: __Type
 

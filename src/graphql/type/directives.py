@@ -1,15 +1,22 @@
+from __future__ import annotations  # Python < 3.10
+
 from typing import Any, Collection, Dict, Optional, Tuple, cast
 
-from ..language import ast, DirectiveLocation
-from ..pyutils import inspect, is_description
+from ..language import DirectiveLocation, ast
+from ..pyutils import inspect
 from .assert_name import assert_name
-from .definition import GraphQLArgument, GraphQLInputType, GraphQLNonNull, is_input_type
+from .definition import GraphQLArgument, GraphQLInputType, GraphQLNonNull
 from .scalars import GraphQLBoolean, GraphQLString
+
 
 try:
     from typing import TypedDict
 except ImportError:  # Python < 3.8
     from typing_extensions import TypedDict
+try:
+    from typing import TypeGuard
+except ImportError:  # Python < 3.10
+    from typing_extensions import TypeGuard
 
 __all__ = [
     "is_directive",
@@ -75,44 +82,21 @@ class GraphQLDirective:
                 f"{name} locations must be specified"
                 " as a collection of DirectiveLocation enum values."
             )
-        if args is None:
-            args = {}
-        elif not isinstance(args, dict) or not all(
-            isinstance(key, str) for key in args
-        ):
-            raise TypeError(f"{name} args must be a dict with argument names as keys.")
-        elif not all(
-            isinstance(value, GraphQLArgument) or is_input_type(value)
-            for value in args.values()
-        ):
-            raise TypeError(
-                f"{name} args must be GraphQLArgument or input type objects."
-            )
-        else:
+        if args:
             args = {
                 assert_name(name): value
                 if isinstance(value, GraphQLArgument)
                 else GraphQLArgument(cast(GraphQLInputType, value))
                 for name, value in args.items()
             }
-        if not isinstance(is_repeatable, bool):
-            raise TypeError(f"{name} is_repeatable flag must be True or False.")
-        if ast_node and not isinstance(ast_node, ast.DirectiveDefinitionNode):
-            raise TypeError(f"{name} AST node must be a DirectiveDefinitionNode.")
-        if description is not None and not is_description(description):
-            raise TypeError(f"{name} description must be a string.")
-        if extensions is None:
-            extensions = {}
-        elif not isinstance(extensions, dict) or not all(
-            isinstance(key, str) for key in extensions
-        ):
-            raise TypeError(f"{name} extensions must be a dictionary with string keys.")
+        else:
+            args = {}
         self.name = name
         self.locations = locations
         self.args = args
         self.is_repeatable = is_repeatable
         self.description = description
-        self.extensions = extensions
+        self.extensions = extensions or {}
         self.ast_node = ast_node
 
     def __str__(self) -> str:
@@ -143,11 +127,11 @@ class GraphQLDirective:
             ast_node=self.ast_node,
         )
 
-    def __copy__(self) -> "GraphQLDirective":  # pragma: no cover
+    def __copy__(self) -> GraphQLDirective:  # pragma: no cover
         return self.__class__(**self.to_kwargs())
 
 
-def is_directive(directive: Any) -> bool:
+def is_directive(directive: Any) -> TypeGuard[GraphQLDirective]:
     """Test if the given value is a GraphQL directive."""
     return isinstance(directive, GraphQLDirective)
 
@@ -155,7 +139,7 @@ def is_directive(directive: Any) -> bool:
 def assert_directive(directive: Any) -> GraphQLDirective:
     if not is_directive(directive):
         raise TypeError(f"Expected {inspect(directive)} to be a GraphQL directive.")
-    return cast(GraphQLDirective, directive)
+    return directive
 
 
 # Used to conditionally include fields or fragments.

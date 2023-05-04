@@ -5,6 +5,7 @@ from graphql.validation import OverlappingFieldsCanBeMergedRule
 
 from .harness import assert_validation_errors
 
+
 assert_errors = partial(assert_validation_errors, OverlappingFieldsCanBeMergedRule)
 
 assert_valid = partial(assert_errors, errors=[])
@@ -576,7 +577,6 @@ def describe_validate_overlapping_fields_can_be_merged():
         )
 
     def describe_return_types_must_be_unambiguous():
-
         schema = build_schema(
             """
             interface SomeBox {

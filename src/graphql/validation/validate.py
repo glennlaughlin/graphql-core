@@ -3,17 +3,22 @@ from typing import Collection, List, Optional, Type
 from ..error import GraphQLError
 from ..language import DocumentNode, ParallelVisitor, visit
 from ..type import GraphQLSchema, assert_valid_schema
-from ..pyutils import inspect, is_collection
 from ..utilities import TypeInfo, TypeInfoVisitor
 from .rules import ASTValidationRule
 from .specified_rules import specified_rules, specified_sdl_rules
 from .validation_context import SDLValidationContext, ValidationContext
 
+
 __all__ = ["assert_valid_sdl", "assert_valid_sdl_extension", "validate", "validate_sdl"]
 
 
-class ValidationAbortedError(RuntimeError):
+class ValidationAbortedError(GraphQLError):
     """Error when a validation has been aborted (error limit reached)."""
+
+
+validation_aborted_error = ValidationAbortedError(
+    "Too many validation errors, error limit reached. Validation aborted."
+)
 
 
 def validate(
@@ -41,38 +46,20 @@ def validate(
 
     Providing a custom TypeInfo instance is deprecated and will be removed in v3.3.
     """
-    if not document_ast or not isinstance(document_ast, DocumentNode):
-        raise TypeError("Must provide document.")
     # If the schema used for validation is invalid, throw an error.
     assert_valid_schema(schema)
     if max_errors is None:
         max_errors = 100
-    elif not isinstance(max_errors, int):
-        raise TypeError("The maximum number of errors must be passed as an int.")
     if type_info is None:
         type_info = TypeInfo(schema)
-    elif not isinstance(type_info, TypeInfo):
-        raise TypeError(f"Not a TypeInfo object: {inspect(type_info)}.")
     if rules is None:
         rules = specified_rules
-    elif not is_collection(rules) or not all(
-        isinstance(rule, type) and issubclass(rule, ASTValidationRule) for rule in rules
-    ):
-        raise TypeError(
-            "Rules must be specified as a collection of ASTValidationRule subclasses."
-        )
 
     errors: List[GraphQLError] = []
 
     def on_error(error: GraphQLError) -> None:
         if len(errors) >= max_errors:  # type: ignore
-            errors.append(
-                GraphQLError(
-                    "Too many validation errors, error limit reached."
-                    " Validation aborted."
-                )
-            )
-            raise ValidationAbortedError
+            raise validation_aborted_error
         errors.append(error)
 
     context = ValidationContext(schema, document_ast, type_info, on_error)
@@ -85,7 +72,7 @@ def validate(
     try:
         visit(document_ast, TypeInfoVisitor(type_info, ParallelVisitor(visitors)))
     except ValidationAbortedError:
-        pass
+        errors.append(validation_aborted_error)
     return errors
 
 

@@ -83,6 +83,7 @@ from .language import (
     # Predicates
     is_definition_node,
     is_executable_definition_node,
+    is_nullability_assertion_node,
     is_selection_node,
     is_value_node,
     is_const_value_node,
@@ -110,6 +111,10 @@ from .language import (
     SelectionNode,
     FieldNode,
     ArgumentNode,
+    NullabilityAssertionNode,
+    NonNullAssertionNode,
+    ErrorBoundaryNode,
+    ListNullabilityOperatorNode,
     ConstArgumentNode,
     FragmentSpreadNode,
     InlineFragmentNode,
@@ -167,8 +172,6 @@ from .utilities import (
     IntrospectionQuery,
     # Get the target Operation from a Document.
     get_operation_ast,
-    # Get the Type for the target Operation AST.
-    get_operation_root_type,
     # Convert a GraphQLSchema to an IntrospectionQuery.
     introspection_from_schema,
     # Build a GraphQLSchema from an introspection result.
@@ -214,10 +217,6 @@ from .utilities import (
     is_equal_type,
     is_type_sub_type_of,
     do_types_overlap,
-    # Assert a string is a valid GraphQL name.
-    assert_valid_name,
-    # Determine if a string is a valid GraphQL name.
-    is_valid_name_error,
     # Compare two GraphQLSchemas and detect breaking changes.
     BreakingChange,
     BreakingChangeType,
@@ -319,7 +318,7 @@ from .type import (
     # Validate GraphQL schema.
     validate_schema,
     assert_valid_schema,
-    #  Uphold the spec rules about naming
+    # Uphold the spec rules about naming
     assert_name,
     assert_enum_value_name,
     # Types
@@ -331,6 +330,8 @@ from .type import (
     GraphQLAbstractType,
     GraphQLWrappingType,
     GraphQLNullableType,
+    GraphQLNullableInputType,
+    GraphQLNullableOutputType,
     GraphQLNamedType,
     GraphQLNamedInputType,
     GraphQLNamedOutputType,
@@ -346,6 +347,7 @@ from .type import (
     GraphQLFieldResolver,
     GraphQLInputField,
     GraphQLInputFieldMap,
+    GraphQLInputFieldOutType,
     GraphQLScalarSerializer,
     GraphQLScalarValueParser,
     GraphQLScalarLiteralParser,
@@ -435,7 +437,7 @@ from .execution import (
     # Subscription
     subscribe,
     create_source_event_stream,
-    MapAsyncIterator,
+    MapAsyncIterable,
     # Middleware
     Middleware,
     MiddlewareManager,
@@ -549,6 +551,8 @@ __all__ = [
     "GraphQLAbstractType",
     "GraphQLWrappingType",
     "GraphQLNullableType",
+    "GraphQLNullableInputType",
+    "GraphQLNullableOutputType",
     "GraphQLNamedType",
     "GraphQLNamedInputType",
     "GraphQLNamedOutputType",
@@ -564,6 +568,7 @@ __all__ = [
     "GraphQLFieldResolver",
     "GraphQLInputField",
     "GraphQLInputFieldMap",
+    "GraphQLInputFieldOutType",
     "GraphQLScalarSerializer",
     "GraphQLScalarValueParser",
     "GraphQLScalarLiteralParser",
@@ -608,6 +613,7 @@ __all__ = [
     "DirectiveLocation",
     "is_definition_node",
     "is_executable_definition_node",
+    "is_nullability_assertion_node",
     "is_selection_node",
     "is_value_node",
     "is_const_value_node",
@@ -632,6 +638,10 @@ __all__ = [
     "SelectionNode",
     "FieldNode",
     "ArgumentNode",
+    "NullabilityAssertionNode",
+    "NonNullAssertionNode",
+    "ErrorBoundaryNode",
+    "ListNullabilityOperatorNode",
     "ConstArgumentNode",
     "FragmentSpreadNode",
     "InlineFragmentNode",
@@ -693,7 +703,7 @@ __all__ = [
     "MiddlewareManager",
     "subscribe",
     "create_source_event_stream",
-    "MapAsyncIterator",
+    "MapAsyncIterable",
     "validate",
     "ValidationContext",
     "ValidationRule",
@@ -744,7 +754,6 @@ __all__ = [
     "get_introspection_query",
     "IntrospectionQuery",
     "get_operation_ast",
-    "get_operation_root_type",
     "introspection_from_schema",
     "build_client_schema",
     "build_ast_schema",
@@ -767,8 +776,6 @@ __all__ = [
     "is_equal_type",
     "is_type_sub_type_of",
     "do_types_overlap",
-    "assert_valid_name",
-    "is_valid_name_error",
     "find_breaking_changes",
     "find_dangerous_changes",
     "BreakingChange",

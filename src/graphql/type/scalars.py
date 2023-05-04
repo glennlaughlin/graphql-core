@@ -2,7 +2,6 @@ from math import isfinite
 from typing import Any, Mapping
 
 from ..error import GraphQLError
-from ..pyutils import inspect
 from ..language.ast import (
     BooleanValueNode,
     FloatValueNode,
@@ -11,7 +10,15 @@ from ..language.ast import (
     ValueNode,
 )
 from ..language.printer import print_ast
+from ..pyutils import inspect
 from .definition import GraphQLNamedType, GraphQLScalarType
+
+
+try:
+    from typing import TypeGuard
+except ImportError:  # Python < 3.10
+    from typing_extensions import TypeGuard
+
 
 __all__ = [
     "is_specified_scalar_type",
@@ -316,6 +323,10 @@ specified_scalar_types: Mapping[str, GraphQLScalarType] = {
 }
 
 
-def is_specified_scalar_type(type_: GraphQLNamedType) -> bool:
+def is_specified_scalar_type(type_: GraphQLNamedType) -> TypeGuard[GraphQLScalarType]:
     """Check whether the given named GraphQL type is a specified scalar type."""
     return type_.name in specified_scalar_types
+
+
+# register the scalar types to avoid redefinition
+GraphQLNamedType.reserved_types.update(specified_scalar_types)

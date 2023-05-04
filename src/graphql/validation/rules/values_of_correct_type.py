@@ -1,24 +1,23 @@
-from typing import cast, Any
+from typing import Any, cast
 
 from ...error import GraphQLError
 from ...language import (
+    SKIP,
     BooleanValueNode,
     EnumValueNode,
     FloatValueNode,
     IntValueNode,
-    NullValueNode,
     ListValueNode,
+    NullValueNode,
     ObjectFieldNode,
     ObjectValueNode,
     StringValueNode,
     ValueNode,
     VisitorAction,
-    SKIP,
     print_ast,
 )
-from ...pyutils import did_you_mean, suggestion_list, Undefined
+from ...pyutils import Undefined, did_you_mean, suggestion_list
 from ...type import (
-    GraphQLInputObjectType,
     GraphQLScalarType,
     get_named_type,
     get_nullable_type,
@@ -29,6 +28,7 @@ from ...type import (
     is_required_input_field,
 )
 from . import ValidationRule
+
 
 __all__ = ["ValuesOfCorrectTypeRule"]
 
@@ -45,7 +45,7 @@ class ValuesOfCorrectTypeRule(ValidationRule):
     def enter_list_value(self, node: ListValueNode, *_args: Any) -> VisitorAction:
         # Note: TypeInfo will traverse into a list's item type, so look to the parent
         # input type to check if it is a list.
-        type_ = get_nullable_type(self.context.get_parent_input_type())  # type: ignore
+        type_ = get_nullable_type(self.context.get_parent_input_type())
         if not is_list_type(type_):
             self.is_valid_value_node(node)
             return SKIP  # Don't traverse further.
@@ -56,7 +56,6 @@ class ValuesOfCorrectTypeRule(ValidationRule):
         if not is_input_object_type(type_):
             self.is_valid_value_node(node)
             return SKIP  # Don't traverse further.
-        type_ = cast(GraphQLInputObjectType, type_)
         # Ensure every required field exists.
         field_node_map = {field.name.value: field for field in node.fields}
         for field_name, field_def in type_.fields.items():
@@ -76,7 +75,6 @@ class ValuesOfCorrectTypeRule(ValidationRule):
         parent_type = get_named_type(self.context.get_parent_input_type())
         field_type = self.context.get_input_type()
         if not field_type and is_input_object_type(parent_type):
-            parent_type = cast(GraphQLInputObjectType, parent_type)
             suggestions = suggestion_list(node.name.value, list(parent_type.fields))
             self.report_error(
                 GraphQLError(

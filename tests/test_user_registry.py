@@ -4,23 +4,15 @@ This is an additional end-to-end test and demo for running the basic GraphQL
 operations on a simulated user registry database backend.
 """
 
-from asyncio import sleep, wait
+from asyncio import create_task, sleep, wait
 from collections import defaultdict
 from enum import Enum
 from inspect import isawaitable
 from typing import Any, Dict, List, NamedTuple, Optional
 
-try:
-    from asyncio import create_task
-except ImportError:  # Python < 3.7
-    create_task = None  # type: ignore
-
 from pytest import fixture, mark
 
 from graphql import (
-    graphql,
-    parse,
-    subscribe,
     GraphQLArgument,
     GraphQLBoolean,
     GraphQLEnumType,
@@ -33,10 +25,12 @@ from graphql import (
     GraphQLObjectType,
     GraphQLSchema,
     GraphQLString,
+    graphql,
+    parse,
+    subscribe,
 )
-
+from graphql.execution.map_async_iterable import MapAsyncIterable
 from graphql.pyutils import SimplePubSub, SimplePubSubIterator
-from graphql.execution.map_async_iterator import MapAsyncIterator
 
 
 class User(NamedTuple):
@@ -416,10 +410,10 @@ def describe_subscription():
             """
 
         variables = {"userId": "0"}
-        subscription_one = await subscribe(
+        subscription_one = subscribe(
             schema, parse(query), context_value=context, variable_values=variables
         )
-        assert isinstance(subscription_one, MapAsyncIterator)
+        assert isinstance(subscription_one, MapAsyncIterable)
 
         query = """
             subscription {
@@ -430,8 +424,8 @@ def describe_subscription():
             }
             """
 
-        subscription_all = await subscribe(schema, parse(query), context_value=context)
-        assert isinstance(subscription_all, MapAsyncIterator)
+        subscription_all = subscribe(schema, parse(query), context_value=context)
+        assert isinstance(subscription_all, MapAsyncIterable)
 
         received_one = []
         received_all = []
@@ -510,8 +504,7 @@ def describe_subscription():
                     break
 
         tasks = [
-            create_task(task()) if create_task else task()
-            for task in (mutate_users, receive_one, receive_all)
+            create_task(task()) for task in (mutate_users, receive_one, receive_all)
         ]
         done, pending = await wait(tasks, timeout=1)
         assert not pending

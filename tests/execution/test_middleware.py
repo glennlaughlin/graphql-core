@@ -1,8 +1,8 @@
-from typing import Awaitable
+from typing import Awaitable, cast
 
 from pytest import mark, raises
 
-from graphql.execution import MiddlewareManager, execute
+from graphql.execution import Middleware, MiddlewareManager, execute
 from graphql.language.parser import parse
 from graphql.type import GraphQLField, GraphQLObjectType, GraphQLSchema, GraphQLString
 
@@ -141,7 +141,6 @@ def describe_middleware():
             )
 
             class ReverseMiddleware:
-
                 # noinspection PyMethodMayBeStatic
                 def resolve(self, next_, *args, **kwargs):
                     return next_(*args, **kwargs)[::-1]
@@ -185,7 +184,6 @@ def describe_middleware():
                 return next_(*args, **kwargs)[::-1]
 
             class CaptitalizeMiddleware:
-
                 # noinspection PyMethodMayBeStatic
                 def resolve(self, next_, *args, **kwargs):
                     return next_(*args, **kwargs).capitalize()
@@ -219,7 +217,6 @@ def describe_middleware():
                 return (await next_(*args, **kwargs))[::-1]
 
             class CaptitalizeMiddleware:
-
                 # noinspection PyMethodMayBeStatic
                 async def resolve(self, next_, *args, **kwargs):
                     return (await next_(*args, **kwargs)).capitalize()
@@ -286,7 +283,7 @@ def describe_middleware():
                     GraphQLSchema(test_type),
                     doc,
                     None,
-                    middleware={"bad": "value"},  # type: ignore
+                    middleware=cast(Middleware, {"bad": "value"}),
                 )
 
             assert str(exc_info.value) == (

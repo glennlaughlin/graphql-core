@@ -9,7 +9,14 @@ from graphql.pyutils import inspect
 
 from ..utils import dedent
 
-Location = Optional[Tuple[int, int]]
+
+try:
+    from typing import TypeAlias
+except ImportError:  # Python < 3.10
+    from typing_extensions import TypeAlias
+
+
+Location: TypeAlias = Optional[Tuple[int, int]]
 
 
 def lex_one(s: str) -> Token:
@@ -512,6 +519,7 @@ def describe_lexer():
     # noinspection PyArgumentEqualDefault
     def lexes_punctuation():
         assert lex_one("!") == Token(TokenKind.BANG, 0, 1, 1, 1, None)
+        assert lex_one("?") == Token(TokenKind.QUESTION_MARK, 0, 1, 1, 1, None)
         assert lex_one("$") == Token(TokenKind.DOLLAR, 0, 1, 1, 1, None)
         assert lex_one("(") == Token(TokenKind.PAREN_L, 0, 1, 1, 1, None)
         assert lex_one(")") == Token(TokenKind.PAREN_R, 0, 1, 1, 1, None)
@@ -615,6 +623,7 @@ def describe_is_punctuator_token_kind():
 
     def returns_true_for_punctuator_tokens():
         assert _is_punctuator_token("!") is True
+        assert _is_punctuator_token("?") is True
         assert _is_punctuator_token("$") is True
         assert _is_punctuator_token("&") is True
         assert _is_punctuator_token("(") is True

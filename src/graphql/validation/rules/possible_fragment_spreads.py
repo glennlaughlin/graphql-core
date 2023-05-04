@@ -1,10 +1,11 @@
-from typing import cast, Any, Optional
+from typing import Any, Optional
 
 from ...error import GraphQLError
 from ...language import FragmentSpreadNode, InlineFragmentNode
 from ...type import GraphQLCompositeType, is_composite_type
 from ...utilities import do_types_overlap, type_from_ast
 from . import ValidationRule
+
 
 __all__ = ["PossibleFragmentSpreadsRule"]
 
@@ -24,11 +25,7 @@ class PossibleFragmentSpreadsRule(ValidationRule):
         if (
             is_composite_type(frag_type)
             and is_composite_type(parent_type)
-            and not do_types_overlap(
-                context.schema,
-                cast(GraphQLCompositeType, frag_type),
-                cast(GraphQLCompositeType, parent_type),
-            )
+            and not do_types_overlap(context.schema, frag_type, parent_type)
         ):
             context.report_error(
                 GraphQLError(
@@ -62,5 +59,5 @@ class PossibleFragmentSpreadsRule(ValidationRule):
         if frag:
             type_ = type_from_ast(context.schema, frag.type_condition)
             if is_composite_type(type_):
-                return cast(GraphQLCompositeType, type_)
+                return type_
         return None

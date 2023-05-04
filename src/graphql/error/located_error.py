@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Collection, Optional, Union
 from ..pyutils import inspect
 from .graphql_error import GraphQLError
 
+
 if TYPE_CHECKING:
     from ..language.ast import Node  # noqa: F401
 
@@ -11,7 +12,7 @@ __all__ = ["located_error"]
 
 def located_error(
     original_error: Exception,
-    nodes: Optional[Union["None", Collection["Node"]]] = None,
+    nodes: Optional[Union[None, Collection["Node"]]] = None,
     path: Optional[Collection[Union[str, int]]] = None,
 ) -> GraphQLError:
     """Located GraphQL Error

@@ -1,32 +1,35 @@
 from typing import Any, Callable, Dict, List, Optional, Union, cast
 
-
 from ..error import GraphQLError
 from ..pyutils import (
     Path,
+    Undefined,
     did_you_mean,
     inspect,
     is_iterable,
     print_path_list,
     suggestion_list,
-    Undefined,
 )
 from ..type import (
-    GraphQLInputObjectType,
     GraphQLInputType,
-    GraphQLList,
     GraphQLScalarType,
-    is_leaf_type,
     is_input_object_type,
+    is_leaf_type,
     is_list_type,
     is_non_null_type,
-    GraphQLNonNull,
 )
+
+
+try:
+    from typing import TypeAlias
+except ImportError:  # Python < 3.10
+    from typing_extensions import TypeAlias
+
 
 __all__ = ["coerce_input_value"]
 
 
-OnErrorCB = Callable[[List[Union[str, int]], Any, GraphQLError], None]
+OnErrorCB: TypeAlias = Callable[[List[Union[str, int]], Any, GraphQLError], None]
 
 
 def default_on_error(
@@ -48,7 +51,6 @@ def coerce_input_value(
     """Coerce a Python value given a GraphQL Input Type."""
     if is_non_null_type(type_):
         if input_value is not None and input_value is not Undefined:
-            type_ = cast(GraphQLNonNull, type_)
             return coerce_input_value(input_value, type_.of_type, on_error, path)
         on_error(
             path.as_list() if path else [],
@@ -64,7 +66,6 @@ def coerce_input_value(
         return None
 
     if is_list_type(type_):
-        type_ = cast(GraphQLList, type_)
         item_type = type_.of_type
         if is_iterable(input_value):
             coerced_list: List[Any] = []
@@ -80,7 +81,6 @@ def coerce_input_value(
         return [coerce_input_value(input_value, item_type, on_error, path)]
 
     if is_input_object_type(type_):
-        type_ = cast(GraphQLInputObjectType, type_)
         if not isinstance(input_value, dict):
             on_error(
                 path.as_list() if path else [],
@@ -130,8 +130,9 @@ def coerce_input_value(
         return type_.out_type(coerced_dict)
 
     if is_leaf_type(type_):
-        # Scalars determine if a value is valid via `parse_value()`, which can throw to
-        # indicate failure. If it throws, maintain a reference to the original error.
+        # Scalars and Enums determine if an input value is valid via `parse_value()`,
+        # which can throw to indicate failure. If it throws, maintain a reference
+        # to the original error.
         type_ = cast(GraphQLScalarType, type_)
         try:
             parse_result = type_.parse_value(input_value)

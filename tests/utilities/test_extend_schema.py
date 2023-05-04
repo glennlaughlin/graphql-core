@@ -23,18 +23,21 @@ from graphql.type import (
     assert_object_type,
     assert_scalar_type,
     assert_union_type,
+    specified_directives,
     validate_schema,
 )
-from graphql.utilities import (
-    build_schema,
-    concat_ast,
-    extend_schema,
-    print_schema,
-)
+from graphql.utilities import build_schema, concat_ast, extend_schema, print_schema
 
 from ..utils import dedent
 
-TypeWithAstNode = Union[
+
+try:
+    from typing import TypeAlias
+except ImportError:  # Python < 3.10
+    from typing_extensions import TypeAlias
+
+
+TypeWithAstNode: TypeAlias = Union[
     GraphQLArgument,
     GraphQLEnumValue,
     GraphQLField,
@@ -43,7 +46,7 @@ TypeWithAstNode = Union[
     GraphQLSchema,
 ]
 
-TypeWithExtensionAstNodes = Union[
+TypeWithExtensionAstNodes: TypeAlias = Union[
     GraphQLNamedType,
     GraphQLSchema,
 ]
@@ -99,6 +102,38 @@ def describe_extend_schema():
             schema=extended_schema, source="{ newField }", root_value={"newField": 123}
         )
         assert result == ({"newField": "123"}, None)
+
+    def does_not_modify_built_in_types_and_directives():
+        schema = build_schema(
+            """
+              type Query {
+                str: String
+                int: Int
+                float: Float
+                id: ID
+                bool: Boolean
+              }
+            """
+        )
+
+        extension_sdl = dedent(
+            """
+            extend type Query {
+              foo: String
+            }
+            """
+        )
+
+        extended_schema = extend_schema(schema, parse(extension_sdl))
+
+        # built-ins are used
+        assert extended_schema.get_type("Int") is GraphQLInt
+        assert extended_schema.get_type("Float") is GraphQLFloat
+        assert extended_schema.get_type("String") is GraphQLString
+        assert extended_schema.get_type("Boolean") is GraphQLBoolean
+        assert extended_schema.get_type("ID") is GraphQLID
+
+        assert extended_schema.directives == specified_directives
 
     def extends_objects_by_adding_new_fields():
         schema = build_schema(
@@ -279,12 +314,17 @@ def describe_extend_schema():
             extend union SomeUnion = SomeUnion
             """
         )
-        # invalid schema cannot be built with Python
-        with raises(TypeError) as exc_info:
-            extend_schema(schema, extend_ast)
-        assert str(exc_info.value) == (
-            "SomeUnion types must be specified"
-            " as a collection of GraphQLObjectType instances."
+        extended_schema = extend_schema(schema, extend_ast)
+
+        assert validate_schema(extended_schema)
+        expect_schema_changes(
+            schema,
+            extended_schema,
+            dedent(
+                """
+                union SomeUnion = SomeUnion
+                """
+            ),
         )
 
     def extends_inputs_by_adding_new_fields():
@@ -1298,19 +1338,6 @@ def describe_extend_schema():
         with raises(TypeError) as exc_info:
             extend_schema(schema, ast, assume_valid_sdl=True)
         assert str(exc_info.value).endswith("Unknown type: 'UnknownType'.")
-
-    def rejects_invalid_ast():
-        schema = GraphQLSchema()
-
-        with raises(TypeError) as exc_info:
-            # noinspection PyTypeChecker
-            extend_schema(schema, None)  # type: ignore
-        assert str(exc_info.value) == "Must provide valid Document AST."
-
-        with raises(TypeError) as exc_info:
-            # noinspection PyTypeChecker
-            extend_schema(schema, {})  # type: ignore
-        assert str(exc_info.value) == "Must provide valid Document AST."
 
     def does_not_allow_replacing_a_default_directive():
         schema = GraphQLSchema()

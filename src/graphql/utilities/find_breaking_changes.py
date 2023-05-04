@@ -1,16 +1,15 @@
 from enum import Enum
-from typing import Any, Collection, Dict, List, NamedTuple, Union, cast
+from typing import Any, Collection, Dict, List, NamedTuple, Union
 
 from ..language import print_ast
-from ..pyutils import inspect, Undefined
+from ..pyutils import Undefined, inspect
 from ..type import (
     GraphQLEnumType,
     GraphQLField,
-    GraphQLList,
-    GraphQLNamedType,
-    GraphQLNonNull,
+    GraphQLInputObjectType,
     GraphQLInputType,
     GraphQLInterfaceType,
+    GraphQLNamedType,
     GraphQLObjectType,
     GraphQLSchema,
     GraphQLType,
@@ -30,6 +29,13 @@ from ..type import (
 )
 from ..utilities.sort_value_node import sort_value_node
 from .ast_from_value import ast_from_value
+
+
+try:
+    from typing import TypeAlias
+except ImportError:  # Python < 3.10
+    from typing_extensions import TypeAlias
+
 
 __all__ = [
     "BreakingChange",
@@ -79,7 +85,7 @@ class DangerousChange(NamedTuple):
     description: str
 
 
-Change = Union[BreakingChange, DangerousChange]
+Change: TypeAlias = Union[BreakingChange, DangerousChange]
 
 
 def find_breaking_changes(
@@ -134,7 +140,7 @@ def find_directive_changes(
             )
         )
 
-    for (old_directive, new_directive) in directives_diff.persisted:
+    for old_directive, new_directive in directives_diff.persisted:
         args_diff = dict_diff(old_directive.args, new_directive.args)
 
         for arg_name, new_arg in args_diff.added.items():
@@ -222,8 +228,8 @@ def find_type_changes(
 
 
 def find_input_object_type_changes(
-    old_type: Union[GraphQLObjectType, GraphQLInterfaceType],
-    new_type: Union[GraphQLObjectType, GraphQLInterfaceType],
+    old_type: GraphQLInputObjectType,
+    new_type: GraphQLInputObjectType,
 ) -> List[Change]:
     schema_changes: List[Change] = []
     fields_diff = dict_diff(old_type.fields, new_type.fields)
@@ -465,14 +471,12 @@ def is_change_safe_for_object_or_interface_field(
             # if they're both lists, make sure underlying types are compatible
             is_list_type(new_type)
             and is_change_safe_for_object_or_interface_field(
-                cast(GraphQLList, old_type).of_type, cast(GraphQLList, new_type).of_type
+                old_type.of_type, new_type.of_type
             )
         ) or (
             # moving from nullable to non-null of same underlying type is safe
             is_non_null_type(new_type)
-            and is_change_safe_for_object_or_interface_field(
-                old_type, cast(GraphQLNonNull, new_type).of_type
-            )
+            and is_change_safe_for_object_or_interface_field(old_type, new_type.of_type)
         )
 
     if is_non_null_type(old_type):
@@ -480,34 +484,33 @@ def is_change_safe_for_object_or_interface_field(
         return is_non_null_type(
             new_type
         ) and is_change_safe_for_object_or_interface_field(
-            cast(GraphQLNonNull, old_type).of_type,
-            cast(GraphQLNonNull, new_type).of_type,
+            old_type.of_type, new_type.of_type
         )
 
-    return (
-        # if they're both named types, see if their names are equivalent
-        is_named_type(new_type)
-        and cast(GraphQLNamedType, old_type).name
-        == cast(GraphQLNamedType, new_type).name
-    ) or (
-        # moving from nullable to non-null of same underlying type is safe
-        is_non_null_type(new_type)
-        and is_change_safe_for_object_or_interface_field(
-            old_type, cast(GraphQLNonNull, new_type).of_type
+    if is_named_type(old_type):
+        return (
+            # if they're both named types, see if their names are equivalent
+            is_named_type(new_type)
+            and old_type.name == new_type.name
+        ) or (
+            # moving from nullable to non-null of same underlying type is safe
+            is_non_null_type(new_type)
+            and is_change_safe_for_object_or_interface_field(old_type, new_type.of_type)
         )
-    )
+
+    # Not reachable. All possible output types have been considered.
+    raise TypeError(f"Unexpected type {inspect(old_type)}")
 
 
 def is_change_safe_for_input_object_field_or_field_arg(
     old_type: GraphQLType, new_type: GraphQLType
 ) -> bool:
     if is_list_type(old_type):
-
         return is_list_type(
             # if they're both lists, make sure underlying types are compatible
             new_type
         ) and is_change_safe_for_input_object_field_or_field_arg(
-            cast(GraphQLList, old_type).of_type, cast(GraphQLList, new_type).of_type
+            old_type.of_type, new_type.of_type
         )
 
     if is_non_null_type(old_type):
@@ -515,23 +518,25 @@ def is_change_safe_for_input_object_field_or_field_arg(
             # if they're both non-null, make sure the underlying types are compatible
             is_non_null_type(new_type)
             and is_change_safe_for_input_object_field_or_field_arg(
-                cast(GraphQLNonNull, old_type).of_type,
-                cast(GraphQLNonNull, new_type).of_type,
+                old_type.of_type, new_type.of_type
             )
         ) or (
             # moving from non-null to nullable of same underlying type is safe
             not is_non_null_type(new_type)
             and is_change_safe_for_input_object_field_or_field_arg(
-                cast(GraphQLNonNull, old_type).of_type, new_type
+                old_type.of_type, new_type
             )
         )
 
-    return (
-        # if they're both named types, see if their names are equivalent
-        is_named_type(new_type)
-        and cast(GraphQLNamedType, old_type).name
-        == cast(GraphQLNamedType, new_type).name
-    )
+    if is_named_type(old_type):
+        return (
+            # if they're both named types, see if their names are equivalent
+            is_named_type(new_type)
+            and old_type.name == new_type.name
+        )
+
+    # Not reachable. All possible output types have been considered.
+    raise TypeError(f"Unexpected type {inspect(old_type)}")
 
 
 def type_kind_name(type_: GraphQLNamedType) -> str:
@@ -549,7 +554,7 @@ def type_kind_name(type_: GraphQLNamedType) -> str:
         return "an Input type"
 
     # Not reachable. All possible output types have been considered.
-    raise TypeError(f"Unexpected type {inspect(type)}")
+    raise TypeError(f"Unexpected type {inspect(type_)}")
 
 
 def stringify_value(value: Any, type_: GraphQLInputType) -> str:

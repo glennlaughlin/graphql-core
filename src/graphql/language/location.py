@@ -1,4 +1,7 @@
-from typing import Any, NamedTuple, TYPE_CHECKING
+from __future__ import annotations  # Python < 3.10
+
+from typing import TYPE_CHECKING, Any, NamedTuple
+
 
 try:
     from typing import TypedDict

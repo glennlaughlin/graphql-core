@@ -3,10 +3,16 @@ from typing import Any, Dict, List, Optional, Union
 
 from ..language import DirectiveLocation
 
+
 try:
-    from typing import TypedDict, Literal
+    from typing import Literal, TypedDict
 except ImportError:  # Python < 3.8
-    from typing_extensions import TypedDict, Literal  # type: ignore
+    from typing_extensions import Literal, TypedDict  # type: ignore
+try:
+    from typing import TypeAlias
+except ImportError:  # Python < 3.10
+    from typing_extensions import TypeAlias
+
 
 __all__ = [
     "get_introspection_query",
@@ -157,7 +163,7 @@ def get_introspection_query(
 # - no generic typed dicts, see https://github.com/python/mypy/issues/3863
 
 # simplified IntrospectionNamedType to avoids cycles
-SimpleIntrospectionType = Dict[str, Any]
+SimpleIntrospectionType: TypeAlias = Dict[str, Any]
 
 
 class MaybeWithDescription(TypedDict, total=False):
@@ -237,7 +243,7 @@ class IntrospectionInputObjectType(WithName):
     inputFields: List[IntrospectionInputValue]
 
 
-IntrospectionType = Union[
+IntrospectionType: TypeAlias = Union[
     IntrospectionScalarType,
     IntrospectionObjectType,
     IntrospectionInterfaceType,
@@ -247,7 +253,7 @@ IntrospectionType = Union[
 ]
 
 
-IntrospectionOutputType = Union[
+IntrospectionOutputType: TypeAlias = Union[
     IntrospectionScalarType,
     IntrospectionObjectType,
     IntrospectionInterfaceType,
@@ -256,7 +262,7 @@ IntrospectionOutputType = Union[
 ]
 
 
-IntrospectionInputType = Union[
+IntrospectionInputType: TypeAlias = Union[
     IntrospectionScalarType, IntrospectionEnumType, IntrospectionInputObjectType
 ]
 
@@ -271,7 +277,7 @@ class IntrospectionNonNullType(TypedDict):
     ofType: SimpleIntrospectionType  # should be IntrospectionType
 
 
-IntrospectionTypeRef = Union[
+IntrospectionTypeRef: TypeAlias = Union[
     IntrospectionType, IntrospectionListType, IntrospectionNonNullType
 ]
 

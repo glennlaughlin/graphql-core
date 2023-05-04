@@ -1,5 +1,6 @@
 from enum import Enum
 
+
 __all__ = ["TokenKind"]
 
 
@@ -9,6 +10,7 @@ class TokenKind(Enum):
     SOF = "<SOF>"
     EOF = "<EOF>"
     BANG = "!"
+    QUESTION_MARK = "?"
     DOLLAR = "$"
     AMP = "&"
     PAREN_L = "("

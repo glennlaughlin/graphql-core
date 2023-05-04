@@ -1,6 +1,7 @@
-from typing import Callable, Dict, List, Optional, Union, TypeVar, cast
 from functools import partial
+from typing import Callable, Dict, List, Optional, TypeVar, Union, cast
 
+from ..error import GraphQLError, GraphQLSyntaxError
 from .ast import (
     ArgumentNode,
     BooleanValueNode,
@@ -15,6 +16,7 @@ from .ast import (
     EnumTypeExtensionNode,
     EnumValueDefinitionNode,
     EnumValueNode,
+    ErrorBoundaryNode,
     FieldDefinitionNode,
     FieldNode,
     FloatValueNode,
@@ -24,15 +26,18 @@ from .ast import (
     InputObjectTypeDefinitionNode,
     InputObjectTypeExtensionNode,
     InputValueDefinitionNode,
-    IntValueNode,
     InterfaceTypeDefinitionNode,
     InterfaceTypeExtensionNode,
+    IntValueNode,
+    ListNullabilityOperatorNode,
     ListTypeNode,
     ListValueNode,
     Location,
-    NameNode,
     NamedTypeNode,
+    NameNode,
+    NonNullAssertionNode,
     NonNullTypeNode,
+    NullabilityAssertionNode,
     NullValueNode,
     ObjectFieldNode,
     ObjectTypeDefinitionNode,
@@ -48,6 +53,7 @@ from .ast import (
     SelectionNode,
     SelectionSetNode,
     StringValueNode,
+    Token,
     TypeNode,
     TypeSystemExtensionNode,
     UnionTypeDefinitionNode,
@@ -57,23 +63,30 @@ from .ast import (
     VariableNode,
 )
 from .directive_locations import DirectiveLocation
-from .ast import Token
 from .lexer import Lexer, is_punctuator_token_kind
 from .source import Source, is_source
 from .token_kind import TokenKind
-from ..error import GraphQLError, GraphQLSyntaxError
+
+
+try:
+    from typing import TypeAlias
+except ImportError:  # Python < 3.10
+    from typing_extensions import TypeAlias
+
 
 __all__ = ["parse", "parse_type", "parse_value", "parse_const_value"]
 
 T = TypeVar("T")
 
-SourceType = Union[Source, str]
+SourceType: TypeAlias = Union[Source, str]
 
 
 def parse(
     source: SourceType,
     no_location: bool = False,
+    max_tokens: Optional[int] = None,
     allow_legacy_fragment_variables: bool = False,
+    experimental_client_controlled_nullability: bool = False,
 ) -> DocumentNode:
     """Given a GraphQL source, parse it into a Document.
 
@@ -82,6 +95,12 @@ def parse(
     By default, the parser creates AST nodes that know the location in the source that
     they correspond to. The ``no_location`` option disables that behavior for
     performance or testing.
+
+    Parser CPU and memory usage is linear to the number of tokens in a document,
+    however in extreme cases it becomes quadratic due to memory exhaustion.
+    Parsing happens before validation so even invalid queries can burn lots of
+    CPU time and memory.
+    To prevent this you can set a maximum number of tokens allowed within a document.
 
     Legacy feature (will be removed in v3.3):
 
@@ -96,11 +115,32 @@ def parse(
         fragment A($var: Boolean = false) on T  {
           ...
         }
+
+    EXPERIMENTAL:
+
+    If enabled, the parser will understand and parse Client Controlled Nullability
+    Designators contained in Fields. They'll be represented in the
+    :attr:`~graphql.language.FieldNode.nullability_assertion` field
+    of the :class:`~graphql.language.FieldNode`.
+
+    The syntax looks like the following::
+
+       {
+         nullableField!
+         nonNullableField?
+         nonNullableSelectionSet? {
+           childField!
+        }
+      }
+
+    Note: this feature is experimental and may change or be removed in the future.
     """
     parser = Parser(
         source,
         no_location=no_location,
+        max_tokens=max_tokens,
         allow_legacy_fragment_variables=allow_legacy_fragment_variables,
+        experimental_client_controlled_nullability=experimental_client_controlled_nullability,  # noqa
     )
     return parser.parse_document()
 
@@ -108,6 +148,7 @@ def parse(
 def parse_value(
     source: SourceType,
     no_location: bool = False,
+    max_tokens: Optional[int] = None,
     allow_legacy_fragment_variables: bool = False,
 ) -> ValueNode:
     """Parse the AST for a given string containing a GraphQL value.
@@ -123,6 +164,7 @@ def parse_value(
     parser = Parser(
         source,
         no_location=no_location,
+        max_tokens=max_tokens,
         allow_legacy_fragment_variables=allow_legacy_fragment_variables,
     )
     parser.expect_token(TokenKind.SOF)
@@ -134,6 +176,7 @@ def parse_value(
 def parse_const_value(
     source: SourceType,
     no_location: bool = False,
+    max_tokens: Optional[int] = None,
     allow_legacy_fragment_variables: bool = False,
 ) -> ConstValueNode:
     """Parse the AST for a given string containing a GraphQL constant value.
@@ -144,6 +187,7 @@ def parse_const_value(
     parser = Parser(
         source,
         no_location=no_location,
+        max_tokens=max_tokens,
         allow_legacy_fragment_variables=allow_legacy_fragment_variables,
     )
     parser.expect_token(TokenKind.SOF)
@@ -155,6 +199,7 @@ def parse_const_value(
 def parse_type(
     source: SourceType,
     no_location: bool = False,
+    max_tokens: Optional[int] = None,
     allow_legacy_fragment_variables: bool = False,
 ) -> TypeNode:
     """Parse the AST for a given string containing a GraphQL Type.
@@ -170,6 +215,7 @@ def parse_type(
     parser = Parser(
         source,
         no_location=no_location,
+        max_tokens=max_tokens,
         allow_legacy_fragment_variables=allow_legacy_fragment_variables,
     )
     parser.expect_token(TokenKind.SOF)
@@ -190,23 +236,32 @@ class Parser:
     library, please use the `__version_info__` variable for version detection.
     """
 
-    _lexer: Lexer
-    _no_Location: bool
+    _no_location: bool
+    _max_tokens: Optional[int]
     _allow_legacy_fragment_variables: bool
+    _experimental_client_controlled_nullability: bool
+    _lexer: Lexer
+    _token_counter: int
 
     def __init__(
         self,
         source: SourceType,
         no_location: bool = False,
+        max_tokens: Optional[int] = None,
         allow_legacy_fragment_variables: bool = False,
+        experimental_client_controlled_nullability: bool = False,
     ):
-        source = (
-            cast(Source, source) if is_source(source) else Source(cast(str, source))
-        )
+        if not is_source(source):
+            source = Source(cast(str, source))
 
-        self._lexer = Lexer(source)
         self._no_location = no_location
+        self._max_tokens = max_tokens
         self._allow_legacy_fragment_variables = allow_legacy_fragment_variables
+        self._experimental_client_controlled_nullability = (
+            experimental_client_controlled_nullability
+        )
+        self._lexer = Lexer(source)
+        self._token_counter = 0
 
     def parse_name(self) -> NameNode:
         """Convert a name lex token into a name parse node."""
@@ -370,12 +425,45 @@ class Parser:
             alias=alias,
             name=name,
             arguments=self.parse_arguments(False),
+            # Experimental support for Client Controlled Nullability changes
+            # the grammar of Field:
+            nullability_assertion=self.parse_nullability_assertion(),
             directives=self.parse_directives(False),
             selection_set=self.parse_selection_set()
             if self.peek(TokenKind.BRACE_L)
             else None,
             loc=self.loc(start),
         )
+
+    def parse_nullability_assertion(self) -> Optional[NullabilityAssertionNode]:
+        """NullabilityAssertion (grammar not yet finalized)
+
+        # Note: Client Controlled Nullability is experimental and may be changed or
+        # removed in the future.
+        """
+        if not self._experimental_client_controlled_nullability:
+            return None
+
+        start = self._lexer.token
+        nullability_assertion: Optional[NullabilityAssertionNode] = None
+
+        if self.expect_optional_token(TokenKind.BRACKET_L):
+            inner_modifier = self.parse_nullability_assertion()
+            self.expect_token(TokenKind.BRACKET_R)
+            nullability_assertion = ListNullabilityOperatorNode(
+                nullability_assertion=inner_modifier, loc=self.loc(start)
+            )
+
+        if self.expect_optional_token(TokenKind.BANG):
+            nullability_assertion = NonNullAssertionNode(
+                nullability_assertion=nullability_assertion, loc=self.loc(start)
+            )
+        elif self.expect_optional_token(TokenKind.QUESTION_MARK):
+            nullability_assertion = ErrorBoundaryNode(
+                nullability_assertion=nullability_assertion, loc=self.loc(start)
+            )
+
+        return nullability_assertion
 
     def parse_arguments(self, is_const: bool) -> List[ArgumentNode]:
         """Arguments[Const]: (Argument[?Const]+)"""
@@ -477,7 +565,7 @@ class Parser:
 
     def parse_string_literal(self, _is_const: bool = False) -> StringValueNode:
         token = self._lexer.token
-        self._lexer.advance()
+        self.advance_lexer()
         return StringValueNode(
             value=token.value,
             block=token.kind == TokenKind.BLOCK_STRING,
@@ -514,18 +602,18 @@ class Parser:
 
     def parse_int(self, _is_const: bool = False) -> IntValueNode:
         token = self._lexer.token
-        self._lexer.advance()
+        self.advance_lexer()
         return IntValueNode(value=token.value, loc=self.loc(token))
 
     def parse_float(self, _is_const: bool = False) -> FloatValueNode:
         token = self._lexer.token
-        self._lexer.advance()
+        self.advance_lexer()
         return FloatValueNode(value=token.value, loc=self.loc(token))
 
     def parse_named_values(self, _is_const: bool = False) -> ValueNode:
         token = self._lexer.token
         value = token.value
-        self._lexer.advance()
+        self.advance_lexer()
         if value == "true":
             return BooleanValueNode(value=True, loc=self.loc(token))
         if value == "false":
@@ -1020,7 +1108,7 @@ class Parser:
         """
         token = self._lexer.token
         if token.kind == kind:
-            self._lexer.advance()
+            self.advance_lexer()
             return token
 
         raise GraphQLSyntaxError(
@@ -1037,7 +1125,7 @@ class Parser:
         """
         token = self._lexer.token
         if token.kind == kind:
-            self._lexer.advance()
+            self.advance_lexer()
             return True
 
         return False
@@ -1050,7 +1138,7 @@ class Parser:
         """
         token = self._lexer.token
         if token.kind == TokenKind.NAME and token.value == value:
-            self._lexer.advance()
+            self.advance_lexer()
         else:
             raise GraphQLSyntaxError(
                 self._lexer.source,
@@ -1066,7 +1154,7 @@ class Parser:
         """
         token = self._lexer.token
         if token.kind == TokenKind.NAME and token.value == value:
-            self._lexer.advance()
+            self.advance_lexer()
             return True
 
         return False
@@ -1153,6 +1241,20 @@ class Parser:
             if not expect_optional_token():
                 break
         return nodes
+
+    def advance_lexer(self) -> None:
+        """Advance the lexer."""
+        token = self._lexer.advance()
+        max_tokens = self._max_tokens
+        if max_tokens is not None and token.kind is not TokenKind.EOF:
+            self._token_counter += 1
+            if self._token_counter > max_tokens:
+                raise GraphQLSyntaxError(
+                    self._lexer.source,
+                    token.start,
+                    f"Document contains more that {max_tokens} tokens."
+                    " Parsing aborted.",
+                )
 
 
 def get_token_desc(token: Token) -> str:

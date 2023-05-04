@@ -7,12 +7,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
-    - name: Set up Python 3.9
-      uses: actions/setup-python@v2
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
       with:
-        python-version: 3.9
+        python-version: '3.11'
 
     - name: Install dependencies
       run: |
@@ -22,4 +22,4 @@ jobs:
     - name: Run code quality tests with tox
       run: tox
       env:
-        TOXENV: black,flake8,mypy,docs,manifest
+        TOXENV: black,flake8,isort,mypy,docs
