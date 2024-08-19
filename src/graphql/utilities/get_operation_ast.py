@@ -1,14 +1,15 @@
-from typing import Optional
+"""Get operation AST node"""
+
+from __future__ import annotations
 
 from ..language import DocumentNode, OperationDefinitionNode
-
 
 __all__ = ["get_operation_ast"]
 
 
 def get_operation_ast(
-    document_ast: DocumentNode, operation_name: Optional[str] = None
-) -> Optional[OperationDefinitionNode]:
+    document_ast: DocumentNode, operation_name: str | None = None
+) -> OperationDefinitionNode | None:
     """Get operation AST node.
 
     Returns an operation AST given a document AST and optionally an operation

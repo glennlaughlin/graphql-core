@@ -1,6 +1,9 @@
-from array import array
-from typing import Any, ByteString, Collection, Iterable, Mapping, Text, ValuesView
+"""Check whether objects are iterable"""
 
+from __future__ import annotations
+
+from array import array
+from typing import Any, Collection, Iterable, Mapping, ValuesView
 
 try:
     from typing import TypeGuard
@@ -19,7 +22,7 @@ collection_types = (
     collection_types[0] if len(collection_types) == 1 else tuple(collection_types)
 )
 iterable_types: Any = Iterable
-not_iterable_types: Any = (ByteString, Mapping, Text)
+not_iterable_types: Any = (bytearray, bytes, str, memoryview, Mapping)
 
 
 def is_collection(value: Any) -> TypeGuard[Collection]:

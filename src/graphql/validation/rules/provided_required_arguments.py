@@ -1,4 +1,8 @@
-from typing import Any, Dict, List, Union, cast
+"""Provided required arguments on directives rule"""
+
+from __future__ import annotations
+
+from typing import Any, List, cast
 
 from ...error import GraphQLError
 from ...language import (
@@ -15,7 +19,6 @@ from ...language import (
 from ...type import GraphQLArgument, is_required_argument, is_type, specified_directives
 from . import ASTValidationRule, SDLValidationContext, ValidationContext
 
-
 __all__ = ["ProvidedRequiredArgumentsRule", "ProvidedRequiredArgumentsOnDirectivesRule"]
 
 
@@ -28,12 +31,12 @@ class ProvidedRequiredArgumentsOnDirectivesRule(ASTValidationRule):
     For internal use only.
     """
 
-    context: Union[ValidationContext, SDLValidationContext]
+    context: ValidationContext | SDLValidationContext
 
-    def __init__(self, context: Union[ValidationContext, SDLValidationContext]):
+    def __init__(self, context: ValidationContext | SDLValidationContext) -> None:
         super().__init__(context)
-        required_args_map: Dict[
-            str, Dict[str, Union[GraphQLArgument, InputValueDefinitionNode]]
+        required_args_map: dict[
+            str, dict[str, GraphQLArgument | InputValueDefinitionNode]
         ] = {}
 
         schema = context.schema
@@ -89,7 +92,7 @@ class ProvidedRequiredArgumentsRule(ProvidedRequiredArgumentsOnDirectivesRule):
 
     context: ValidationContext
 
-    def __init__(self, context: ValidationContext):
+    def __init__(self, context: ValidationContext) -> None:
         super().__init__(context)
 
     def leave_field(self, field_node: FieldNode, *_args: Any) -> VisitorAction:

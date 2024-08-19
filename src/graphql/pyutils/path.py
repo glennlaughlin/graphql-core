@@ -1,7 +1,8 @@
-from __future__ import annotations  # Python < 3.10
+"""Path of indices"""
 
-from typing import Any, List, NamedTuple, Optional, Union
+from __future__ import annotations
 
+from typing import NamedTuple
 
 __all__ = ["Path"]
 
@@ -9,22 +10,22 @@ __all__ = ["Path"]
 class Path(NamedTuple):
     """A generic path of string or integer indices"""
 
-    prev: Any  # Optional['Path'] (python/mypy/issues/731)
+    prev: Path | None
     """path with the previous indices"""
-    key: Union[str, int]
+    key: str | int
     """current index in the path (string or integer)"""
-    typename: Optional[str]
+    typename: str | None
     """name of the parent type to avoid path ambiguity"""
 
-    def add_key(self, key: Union[str, int], typename: Optional[str] = None) -> Path:
+    def add_key(self, key: str | int, typename: str | None = None) -> Path:
         """Return a new Path containing the given key."""
         return Path(self, key, typename)
 
-    def as_list(self) -> List[Union[str, int]]:
+    def as_list(self) -> list[str | int]:
         """Return a list of the path keys."""
-        flattened: List[Union[str, int]] = []
+        flattened: list[str | int] = []
         append = flattened.append
-        curr: Path = self
+        curr: Path | None = self
         while curr:
             append(curr.key)
             curr = curr.prev

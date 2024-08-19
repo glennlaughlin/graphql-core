@@ -1,4 +1,8 @@
-from typing import Any, Dict, Optional, Union
+"""Unique operation types rule"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 from ...error import GraphQLError
 from ...language import (
@@ -9,9 +13,10 @@ from ...language import (
     SchemaExtensionNode,
     VisitorAction,
 )
-from ...type import GraphQLObjectType
-from . import SDLValidationContext, SDLValidationRule
 
+if TYPE_CHECKING:
+    from ...type import GraphQLObjectType
+from . import SDLValidationContext, SDLValidationRule
 
 __all__ = ["UniqueOperationTypesRule"]
 
@@ -22,15 +27,13 @@ class UniqueOperationTypesRule(SDLValidationRule):
     A GraphQL document is only valid if it has only one type per operation.
     """
 
-    def __init__(self, context: SDLValidationContext):
+    def __init__(self, context: SDLValidationContext) -> None:
         super().__init__(context)
         schema = context.schema
-        self.defined_operation_types: Dict[
+        self.defined_operation_types: dict[
             OperationType, OperationTypeDefinitionNode
         ] = {}
-        self.existing_operation_types: Dict[
-            OperationType, Optional[GraphQLObjectType]
-        ] = (
+        self.existing_operation_types: dict[OperationType, GraphQLObjectType | None] = (
             {
                 OperationType.QUERY: schema.query_type,
                 OperationType.MUTATION: schema.mutation_type,
@@ -42,7 +45,7 @@ class UniqueOperationTypesRule(SDLValidationRule):
         self.schema = schema
 
     def check_operation_types(
-        self, node: Union[SchemaDefinitionNode, SchemaExtensionNode], *_args: Any
+        self, node: SchemaDefinitionNode | SchemaExtensionNode, *_args: Any
     ) -> VisitorAction:
         for operation_type in node.operation_types or []:
             operation = operation_type.operation

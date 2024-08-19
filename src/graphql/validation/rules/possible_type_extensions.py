@@ -1,6 +1,10 @@
+"""Possible type extension rule"""
+
+from __future__ import annotations
+
 import re
 from functools import partial
-from typing import Any, Optional
+from typing import Any
 
 from ...error import GraphQLError
 from ...language import TypeDefinitionNode, TypeExtensionNode
@@ -15,7 +19,6 @@ from ...type import (
 )
 from . import SDLValidationContext, SDLValidationRule
 
-
 __all__ = ["PossibleTypeExtensionsRule"]
 
 
@@ -25,7 +28,7 @@ class PossibleTypeExtensionsRule(SDLValidationRule):
     A type extension is only valid if the type is defined and has the same kind.
     """
 
-    def __init__(self, context: SDLValidationContext):
+    def __init__(self, context: SDLValidationContext) -> None:
         super().__init__(context)
         self.schema = context.schema
         self.defined_types = {
@@ -40,7 +43,7 @@ class PossibleTypeExtensionsRule(SDLValidationRule):
         def_node = self.defined_types.get(type_name)
         existing_type = schema.get_type(type_name) if schema else None
 
-        expected_kind: Optional[str]
+        expected_kind: str | None
         if def_node:
             expected_kind = def_kind_to_ext_kind(def_node.kind)
         elif existing_type:
@@ -93,7 +96,8 @@ def type_to_ext_kind(type_: Any) -> str:
         return "input_object_type_extension"
 
     # Not reachable. All possible types have been considered.
-    raise TypeError(f"Unexpected type: {inspect(type_)}.")
+    msg = f"Unexpected type: {inspect(type_)}."  # pragma: no cover
+    raise TypeError(msg)  # pragma: no cover
 
 
 _type_names_for_extension_kinds = {

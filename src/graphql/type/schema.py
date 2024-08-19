@@ -1,10 +1,21 @@
-from __future__ import annotations  # Python < 3.10
+"""GraphQL schemas"""
+
+from __future__ import annotations
 
 from copy import copy, deepcopy
-from typing import Any, Collection, Dict, List, NamedTuple, Optional, Set, Tuple, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Collection,
+    Dict,
+    NamedTuple,
+    cast,
+)
 
-from ..error import GraphQLError
-from ..language import OperationType, ast
+if TYPE_CHECKING:
+    from ..error import GraphQLError
+    from ..language import OperationType, ast
+
 from ..pyutils import inspect
 from .definition import (
     GraphQLAbstractType,
@@ -29,7 +40,6 @@ from .introspection import (
     introspection_types,
 )
 
-
 try:
     from typing import TypedDict
 except ImportError:  # Python < 3.8
@@ -39,28 +49,28 @@ try:
 except ImportError:  # Python < 3.10
     from typing_extensions import TypeAlias, TypeGuard
 
-
 __all__ = ["GraphQLSchema", "GraphQLSchemaKwargs", "is_schema", "assert_schema"]
-
 
 TypeMap: TypeAlias = Dict[str, GraphQLNamedType]
 
 
 class InterfaceImplementations(NamedTuple):
-    objects: List[GraphQLObjectType]
-    interfaces: List[GraphQLInterfaceType]
+    objects: list[GraphQLObjectType]
+    interfaces: list[GraphQLInterfaceType]
 
 
 class GraphQLSchemaKwargs(TypedDict, total=False):
-    query: Optional[GraphQLObjectType]
-    mutation: Optional[GraphQLObjectType]
-    subscription: Optional[GraphQLObjectType]
-    types: Optional[Tuple[GraphQLNamedType, ...]]
-    directives: Tuple[GraphQLDirective, ...]
-    description: Optional[str]
-    extensions: Dict[str, Any]
-    ast_node: Optional[ast.SchemaDefinitionNode]
-    extension_ast_nodes: Tuple[ast.SchemaExtensionNode, ...]
+    """Arguments for GraphQL schemas"""
+
+    query: GraphQLObjectType | None
+    mutation: GraphQLObjectType | None
+    subscription: GraphQLObjectType | None
+    types: tuple[GraphQLNamedType, ...] | None
+    directives: tuple[GraphQLDirective, ...]
+    description: str | None
+    extensions: dict[str, Any]
+    ast_node: ast.SchemaDefinitionNode | None
+    extension_ast_nodes: tuple[ast.SchemaExtensionNode, ...]
     assume_valid: bool
 
 
@@ -114,31 +124,31 @@ class GraphQLSchema:
           directives=specified_directives + [my_custom_directive])
     """
 
-    query_type: Optional[GraphQLObjectType]
-    mutation_type: Optional[GraphQLObjectType]
-    subscription_type: Optional[GraphQLObjectType]
+    query_type: GraphQLObjectType | None
+    mutation_type: GraphQLObjectType | None
+    subscription_type: GraphQLObjectType | None
     type_map: TypeMap
-    directives: Tuple[GraphQLDirective, ...]
-    description: Optional[str]
-    extensions: Dict[str, Any]
-    ast_node: Optional[ast.SchemaDefinitionNode]
-    extension_ast_nodes: Tuple[ast.SchemaExtensionNode, ...]
+    directives: tuple[GraphQLDirective, ...]
+    description: str | None
+    extensions: dict[str, Any]
+    ast_node: ast.SchemaDefinitionNode | None
+    extension_ast_nodes: tuple[ast.SchemaExtensionNode, ...]
 
-    _implementations_map: Dict[str, InterfaceImplementations]
-    _sub_type_map: Dict[str, Set[str]]
-    _validation_errors: Optional[List[GraphQLError]]
+    _implementations_map: dict[str, InterfaceImplementations]
+    _sub_type_map: dict[str, set[str]]
+    _validation_errors: list[GraphQLError] | None
 
     def __init__(
         self,
-        query: Optional[GraphQLObjectType] = None,
-        mutation: Optional[GraphQLObjectType] = None,
-        subscription: Optional[GraphQLObjectType] = None,
-        types: Optional[Collection[GraphQLNamedType]] = None,
-        directives: Optional[Collection[GraphQLDirective]] = None,
-        description: Optional[str] = None,
-        extensions: Optional[Dict[str, Any]] = None,
-        ast_node: Optional[ast.SchemaDefinitionNode] = None,
-        extension_ast_nodes: Optional[Collection[ast.SchemaExtensionNode]] = None,
+        query: GraphQLObjectType | None = None,
+        mutation: GraphQLObjectType | None = None,
+        subscription: GraphQLObjectType | None = None,
+        types: Collection[GraphQLNamedType] | None = None,
+        directives: Collection[GraphQLDirective] | None = None,
+        description: str | None = None,
+        extensions: dict[str, Any] | None = None,
+        ast_node: ast.SchemaDefinitionNode | None = None,
+        extension_ast_nodes: Collection[ast.SchemaExtensionNode] | None = None,
         assume_valid: bool = False,
     ) -> None:
         """Initialize GraphQL schema.
@@ -198,7 +208,7 @@ class GraphQLSchema:
         self._sub_type_map = {}
 
         # Keep track of all implementations by interface name.
-        implementations_map: Dict[str, InterfaceImplementations] = {}
+        implementations_map: dict[str, InterfaceImplementations] = {}
         self._implementations_map = implementations_map
 
         for named_type in all_referenced_types:
@@ -207,15 +217,17 @@ class GraphQLSchema:
 
             type_name = getattr(named_type, "name", None)
             if not type_name:
-                raise TypeError(
+                msg = (
                     "One of the provided types for building the Schema"
-                    " is missing a name.",
+                    " is missing a name."
                 )
+                raise TypeError(msg)
             if type_name in type_map:
-                raise TypeError(
+                msg = (
                     "Schema must contain uniquely named types"
                     f" but contains multiple types named '{type_name}'."
                 )
+                raise TypeError(msg)
 
             type_map[type_name] = named_type
 
@@ -226,9 +238,9 @@ class GraphQLSchema:
                         if iface.name in implementations_map:
                             implementations = implementations_map[iface.name]
                         else:
-                            implementations = implementations_map[
-                                iface.name
-                            ] = InterfaceImplementations(objects=[], interfaces=[])
+                            implementations = implementations_map[iface.name] = (
+                                InterfaceImplementations(objects=[], interfaces=[])
+                            )
 
                         implementations.interfaces.append(named_type)
             elif is_object_type(named_type):
@@ -238,13 +250,14 @@ class GraphQLSchema:
                         if iface.name in implementations_map:
                             implementations = implementations_map[iface.name]
                         else:
-                            implementations = implementations_map[
-                                iface.name
-                            ] = InterfaceImplementations(objects=[], interfaces=[])
+                            implementations = implementations_map[iface.name] = (
+                                InterfaceImplementations(objects=[], interfaces=[])
+                            )
 
                         implementations.objects.append(named_type)
 
     def to_kwargs(self) -> GraphQLSchemaKwargs:
+        """Get corresponding arguments."""
         return GraphQLSchemaKwargs(
             query=self.query_type,
             mutation=self.mutation_type,
@@ -261,7 +274,7 @@ class GraphQLSchema:
     def __copy__(self) -> GraphQLSchema:  # pragma: no cover
         return self.__class__(**self.to_kwargs())
 
-    def __deepcopy__(self, memo_: Dict) -> GraphQLSchema:
+    def __deepcopy__(self, memo_: dict) -> GraphQLSchema:
         from ..type import (
             is_introspection_type,
             is_specified_directive,
@@ -295,15 +308,17 @@ class GraphQLSchema:
             assume_valid=True,
         )
 
-    def get_root_type(self, operation: OperationType) -> Optional[GraphQLObjectType]:
+    def get_root_type(self, operation: OperationType) -> GraphQLObjectType | None:
+        """Get the root type."""
         return getattr(self, f"{operation.value}_type")
 
-    def get_type(self, name: str) -> Optional[GraphQLNamedType]:
+    def get_type(self, name: str) -> GraphQLNamedType | None:
+        """Get the type with the given name."""
         return self.type_map.get(name)
 
     def get_possible_types(
         self, abstract_type: GraphQLAbstractType
-    ) -> List[GraphQLObjectType]:
+    ) -> list[GraphQLObjectType]:
         """Get list of all possible concrete types for given abstract type."""
         return (
             abstract_type.types
@@ -316,6 +331,7 @@ class GraphQLSchema:
     def get_implementations(
         self, interface_type: GraphQLInterfaceType
     ) -> InterfaceImplementations:
+        """Get implementations for the given interface type."""
         return self._implementations_map.get(
             interface_type.name, InterfaceImplementations(objects=[], interfaces=[])
         )
@@ -344,7 +360,8 @@ class GraphQLSchema:
             self._sub_type_map[abstract_type.name] = types
         return maybe_sub_type.name in types
 
-    def get_directive(self, name: str) -> Optional[GraphQLDirective]:
+    def get_directive(self, name: str) -> GraphQLDirective | None:
+        """Get the directive with the given name."""
         for directive in self.directives:
             if directive.name == name:
                 return directive
@@ -352,7 +369,7 @@ class GraphQLSchema:
 
     def get_field(
         self, parent_type: GraphQLCompositeType, field_name: str
-    ) -> Optional[GraphQLField]:
+    ) -> GraphQLField | None:
         """Get field of a given type with the given name.
 
         This method looks up the field on the given type definition.
@@ -380,7 +397,8 @@ class GraphQLSchema:
             return None
 
     @property
-    def validation_errors(self) -> Optional[List[GraphQLError]]:
+    def validation_errors(self) -> list[GraphQLError] | None:
+        """Get validation errors."""
         return self._validation_errors
 
 
@@ -418,13 +436,15 @@ class TypeSet(Dict[GraphQLNamedType, None]):
 
 
 def is_schema(schema: Any) -> TypeGuard[GraphQLSchema]:
-    """Test if the given value is a GraphQL schema."""
+    """Check whether this is a GraphQL schema."""
     return isinstance(schema, GraphQLSchema)
 
 
 def assert_schema(schema: Any) -> GraphQLSchema:
+    """Assert that this is a GraphQL schema."""
     if not is_schema(schema):
-        raise TypeError(f"Expected {inspect(schema)} to be a GraphQL schema.")
+        msg = f"Expected {inspect(schema)} to be a GraphQL schema."
+        raise TypeError(msg)
     return schema
 
 
@@ -449,17 +469,17 @@ def remap_named_type(type_: GraphQLNamedType, type_map: TypeMap) -> None:
         ]
         fields = type_.fields
         for field_name, field in fields.items():
-            field = copy(field)
+            field = copy(field)  # noqa: PLW2901
             field.type = remapped_type(field.type, type_map)
             args = field.args
             for arg_name, arg in args.items():
-                arg = copy(arg)
+                arg = copy(arg)  # noqa: PLW2901
                 arg.type = remapped_type(arg.type, type_map)
                 args[arg_name] = arg
             fields[field_name] = field
     elif is_input_object_type(type_):
         fields = type_.fields
         for field_name, field in fields.items():
-            field = copy(field)
+            field = copy(field)  # noqa: PLW2901
             field.type = remapped_type(field.type, type_map)
             fields[field_name] = field

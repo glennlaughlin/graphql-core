@@ -1,9 +1,14 @@
-from typing import Any, Set
+"""No undefined variables rule"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 from ...error import GraphQLError
-from ...language import OperationDefinitionNode, VariableDefinitionNode
 from . import ValidationContext, ValidationRule
 
+if TYPE_CHECKING:
+    from ...language import OperationDefinitionNode, VariableDefinitionNode
 
 __all__ = ["NoUndefinedVariablesRule"]
 
@@ -17,9 +22,9 @@ class NoUndefinedVariablesRule(ValidationRule):
     See https://spec.graphql.org/draft/#sec-All-Variable-Uses-Defined
     """
 
-    def __init__(self, context: ValidationContext):
+    def __init__(self, context: ValidationContext) -> None:
         super().__init__(context)
-        self.defined_variable_names: Set[str] = set()
+        self.defined_variable_names: set[str] = set()
 
     def enter_operation_definition(self, *_args: Any) -> None:
         self.defined_variable_names.clear()

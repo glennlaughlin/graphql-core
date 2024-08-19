@@ -1,9 +1,11 @@
+"""Sorting value nodes"""
+
+from __future__ import annotations
+
 from copy import copy
-from typing import Tuple
 
 from ..language import ListValueNode, ObjectFieldNode, ObjectValueNode, ValueNode
 from ..pyutils import natural_comparison_key
-
 
 __all__ = ["sort_value_node"]
 
@@ -30,7 +32,7 @@ def sort_field(field: ObjectFieldNode) -> ObjectFieldNode:
     return field
 
 
-def sort_fields(fields: Tuple[ObjectFieldNode, ...]) -> Tuple[ObjectFieldNode, ...]:
+def sort_fields(fields: tuple[ObjectFieldNode, ...]) -> tuple[ObjectFieldNode, ...]:
     return tuple(
         sorted(
             (sort_field(field) for field in fields),

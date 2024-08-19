@@ -1,4 +1,8 @@
-from typing import Any, Dict, Optional
+"""Variables in allowed position rule"""
+
+from __future__ import annotations
+
+from typing import Any
 
 from ...error import GraphQLError
 from ...language import (
@@ -12,7 +16,6 @@ from ...type import GraphQLSchema, GraphQLType, is_non_null_type
 from ...utilities import is_type_sub_type_of, type_from_ast
 from . import ValidationContext, ValidationRule
 
-
 __all__ = ["VariablesInAllowedPositionRule"]
 
 
@@ -24,9 +27,9 @@ class VariablesInAllowedPositionRule(ValidationRule):
     See https://spec.graphql.org/draft/#sec-All-Variable-Usages-are-Allowed
     """
 
-    def __init__(self, context: ValidationContext):
+    def __init__(self, context: ValidationContext) -> None:
         super().__init__(context)
-        self.var_def_map: Dict[str, Any] = {}
+        self.var_def_map: dict[str, Any] = {}
 
     def enter_operation_definition(self, *_args: Any) -> None:
         self.var_def_map.clear()
@@ -70,7 +73,7 @@ class VariablesInAllowedPositionRule(ValidationRule):
 def allowed_variable_usage(
     schema: GraphQLSchema,
     var_type: GraphQLType,
-    var_default_value: Optional[ValueNode],
+    var_default_value: ValueNode | None,
     location_type: GraphQLType,
     location_default_value: Any,
 ) -> bool:

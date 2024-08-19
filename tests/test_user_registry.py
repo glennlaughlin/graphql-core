@@ -4,14 +4,14 @@ This is an additional end-to-end test and demo for running the basic GraphQL
 operations on a simulated user registry database backend.
 """
 
+from __future__ import annotations
+
 from asyncio import create_task, sleep, wait
 from collections import defaultdict
 from enum import Enum
-from inspect import isawaitable
-from typing import Any, Dict, List, NamedTuple, Optional
+from typing import Any, AsyncIterable, NamedTuple
 
-from pytest import fixture, mark
-
+import pytest
 from graphql import (
     GraphQLArgument,
     GraphQLBoolean,
@@ -29,8 +29,7 @@ from graphql import (
     parse,
     subscribe,
 )
-from graphql.execution.map_async_iterable import MapAsyncIterable
-from graphql.pyutils import SimplePubSub, SimplePubSubIterator
+from graphql.pyutils import SimplePubSub, SimplePubSubIterator, is_awaitable
 
 
 class User(NamedTuple):
@@ -38,8 +37,8 @@ class User(NamedTuple):
 
     firstName: str
     lastName: str
-    tweets: Optional[int]
-    id: Optional[str] = None
+    tweets: int | None
+    id: str | None = None
     verified: bool = False
 
 
@@ -55,10 +54,10 @@ class UserRegistry:
     """Simulation of a user registry with asynchronous database backend access."""
 
     def __init__(self, **users):
-        self._registry: Dict[str, User] = users
+        self._registry: dict[str, User] = users
         self._pubsub = defaultdict(SimplePubSub)
 
-    async def get(self, id_: str) -> Optional[User]:
+    async def get(self, id_: str) -> User | None:
         """Get a user object from the registry"""
         await sleep(0)
         return self._registry.get(id_)
@@ -94,7 +93,7 @@ class UserRegistry:
         self._pubsub[None].emit(payload)  # notify all user subscriptions
         self._pubsub[user.id].emit(payload)  # notify single user subscriptions
 
-    def event_iterator(self, id_: Optional[str]) -> SimplePubSubIterator:
+    def event_iterator(self, id_: str | None) -> SimplePubSubIterator:
         return self._pubsub[id_].get_subscriber()
 
 
@@ -134,19 +133,17 @@ async def resolve_user(_root, info, **args):
 
 async def resolve_create_user(_root, info, data):
     """Resolver function for creating a user object"""
-    user = await info.context["registry"].create(**data)
-    return user
+    return await info.context["registry"].create(**data)
 
 
 # noinspection PyShadowingBuiltins
-async def resolve_update_user(_root, info, id, data):
+async def resolve_update_user(_root, info, id, data):  # noqa: A002
     """Resolver function for updating a user object"""
-    user = await info.context["registry"].update(id, **data)
-    return user
+    return await info.context["registry"].update(id, **data)
 
 
 # noinspection PyShadowingBuiltins
-async def resolve_delete_user(_root, info, id):
+async def resolve_delete_user(_root, info, id):  # noqa: A002
     """Resolver function for deleting a user object"""
     user = await info.context["registry"].get(id)
     await info.context["registry"].delete(user.id)
@@ -154,15 +151,15 @@ async def resolve_delete_user(_root, info, id):
 
 
 # noinspection PyShadowingBuiltins
-async def subscribe_user(_root, info, id=None):
+async def subscribe_user(_root, info, id=None):  # noqa: A002
     """Subscribe to mutations of a specific user object or all user objects"""
     async_iterator = info.context["registry"].event_iterator(id)
     async for event in async_iterator:
-        yield await event if isawaitable(event) else event  # pragma: no cover exit
+        yield await event if is_awaitable(event) else event  # pragma: no cover exit
 
 
 # noinspection PyShadowingBuiltins,PyUnusedLocal
-async def resolve_subscription_user(event, info, id):
+async def resolve_subscription_user(event, info, id):  # noqa: ARG001, A002
     """Resolver function for user subscriptions"""
     user = event["user"]
     mutation = MutationEnum(event["mutation"]).value
@@ -215,13 +212,13 @@ schema = GraphQLSchema(
 )
 
 
-@fixture
+@pytest.fixture()
 def context():
     return {"registry": UserRegistry()}
 
 
 def describe_query():
-    @mark.asyncio
+    @pytest.mark.asyncio()
     async def query_user(context):
         user = await context["registry"].create(
             firstName="John", lastName="Doe", tweets=42, verified=True
@@ -253,7 +250,7 @@ def describe_query():
 
 
 def describe_mutation():
-    @mark.asyncio
+    @pytest.mark.asyncio()
     async def create_user(context):
         received = {}
 
@@ -264,7 +261,7 @@ def describe_mutation():
             return receive
 
         # noinspection PyProtectedMember
-        pubsub = context["registry"]._pubsub
+        pubsub = context["registry"]._pubsub  # noqa: SLF001s
         pubsub[None].subscribers.add(subscriber("User"))
         pubsub["0"].subscribers.add(subscriber("User 0"))
 
@@ -275,7 +272,12 @@ def describe_mutation():
                 }
             }
             """
-        user_data = dict(firstName="John", lastName="Doe", tweets=42, verified=True)
+        user_data = {
+            "firstName": "John",
+            "lastName": "Doe",
+            "tweets": 42,
+            "verified": True,
+        }
         variables = {"userData": user_data}
         result = await graphql(
             schema, query, context_value=context, variable_values=variables
@@ -300,7 +302,7 @@ def describe_mutation():
             "User 0": {"user": user, "mutation": MutationEnum.CREATED.value},
         }
 
-    @mark.asyncio
+    @pytest.mark.asyncio()
     async def update_user(context):
         received = {}
 
@@ -311,7 +313,7 @@ def describe_mutation():
             return receive
 
         # noinspection PyProtectedMember
-        pubsub = context["registry"]._pubsub
+        pubsub = context["registry"]._pubsub  # noqa: SLF001
         pubsub[None].subscribers.add(subscriber("User"))
         pubsub["0"].subscribers.add(subscriber("User 0"))
 
@@ -356,7 +358,7 @@ def describe_mutation():
             "User 0": {"user": user, "mutation": MutationEnum.UPDATED.value},
         }
 
-    @mark.asyncio
+    @pytest.mark.asyncio()
     async def delete_user(context):
         received = {}
 
@@ -367,7 +369,7 @@ def describe_mutation():
             return receive
 
         # noinspection PyProtectedMember
-        pubsub = context["registry"]._pubsub
+        pubsub = context["registry"]._pubsub  # noqa: SLF001
         pubsub[None].subscribers.add(subscriber("User"))
         pubsub["0"].subscribers.add(subscriber("User 0"))
 
@@ -398,7 +400,7 @@ def describe_mutation():
 
 
 def describe_subscription():
-    @mark.asyncio
+    @pytest.mark.asyncio()
     async def subscribe_to_user_mutations(context):
         query = """
             subscription ($userId: ID!) {
@@ -413,7 +415,7 @@ def describe_subscription():
         subscription_one = subscribe(
             schema, parse(query), context_value=context, variable_values=variables
         )
-        assert isinstance(subscription_one, MapAsyncIterable)
+        assert isinstance(subscription_one, AsyncIterable)
 
         query = """
             subscription {
@@ -425,13 +427,13 @@ def describe_subscription():
             """
 
         subscription_all = subscribe(schema, parse(query), context_value=context)
-        assert isinstance(subscription_all, MapAsyncIterable)
+        assert isinstance(subscription_all, AsyncIterable)
 
         received_one = []
         received_all = []
 
         async def mutate_users():
-            await sleep(0)  # make sure subscribers are running
+            await sleep(2 / 512)  # make sure subscribers are running
             await graphql(
                 schema,
                 """
@@ -492,13 +494,13 @@ def describe_subscription():
             )
 
         async def receive_one():
-            async for result in subscription_one:  # type: ignore # pragma: no cover
+            async for result in subscription_one:  # pragma: no cover
                 received_one.append(result)
                 if len(received_one) == 3:  # pragma: no cover else
                     break
 
         async def receive_all():
-            async for result in subscription_all:  # type: ignore # pragma: no cover
+            async for result in subscription_all:  # pragma: no cover
                 received_all.append(result)
                 if len(received_all) == 6:  # pragma: no cover else
                     break
@@ -509,7 +511,7 @@ def describe_subscription():
         done, pending = await wait(tasks, timeout=1)
         assert not pending
 
-        expected_data: List[Dict[str, Any]] = [
+        expected_data: list[dict[str, Any]] = [
             {
                 "mutation": "CREATED",
                 "user": {

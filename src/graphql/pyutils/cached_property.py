@@ -1,5 +1,8 @@
-from typing import TYPE_CHECKING, Any, Callable
+"""Cached properties"""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     standard_cached_property = None

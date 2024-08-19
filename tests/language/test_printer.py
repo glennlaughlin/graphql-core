@@ -1,7 +1,6 @@
 from copy import deepcopy
 
-from pytest import raises
-
+import pytest
 from graphql.language import FieldNode, NameNode, parse, print_ast
 
 from ..fixtures import kitchen_sink_query  # noqa: F401
@@ -15,12 +14,12 @@ def describe_printer_query_document():
 
     def produces_helpful_error_messages():
         bad_ast = {"random": "Data"}
-        with raises(TypeError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             # noinspection PyTypeChecker
             print_ast(bad_ast)  # type: ignore
         assert str(exc_info.value) == "Not an AST Node: {'random': 'Data'}."
         corrupt_ast = FieldNode(name="random data")
-        with raises(TypeError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             print_ast(corrupt_ast)
         assert str(exc_info.value) == "Invalid AST Node: 'random data'."
 
@@ -100,6 +99,75 @@ def describe_printer_query_document():
                 arriveBy: false
                 includePlannedCancellations: true
                 transitDistanceReluctance: 2000
+              ) {
+                dateTime
+              }
+            }
+            """
+        )
+
+    def puts_large_object_values_on_multiple_lines_if_line_has_more_than_80_chars():
+        printed = print_ast(
+            parse(
+                "{trip(obj:{wheelchair:false,smallObj:{a: 1},largeObj:"
+                "{wheelchair:false,smallObj:{a: 1},arriveBy:false,"
+                "includePlannedCancellations:true,transitDistanceReluctance:2000,"
+                'anotherLongFieldName:"Lots and lots and lots and lots of text"},'
+                "arriveBy:false,includePlannedCancellations:true,"
+                "transitDistanceReluctance:2000,anotherLongFieldName:"
+                '"Lots and lots and lots and lots of text"}){dateTime}}'
+            )
+        )
+
+        assert printed == dedent(
+            """
+            {
+              trip(
+                obj: {
+                  wheelchair: false
+                  smallObj: { a: 1 }
+                  largeObj: {
+                    wheelchair: false
+                    smallObj: { a: 1 }
+                    arriveBy: false
+                    includePlannedCancellations: true
+                    transitDistanceReluctance: 2000
+                    anotherLongFieldName: "Lots and lots and lots and lots of text"
+                  }
+                  arriveBy: false
+                  includePlannedCancellations: true
+                  transitDistanceReluctance: 2000
+                  anotherLongFieldName: "Lots and lots and lots and lots of text"
+                }
+              ) {
+                dateTime
+              }
+            }
+            """
+        )
+
+    def puts_large_list_values_on_multiple_lines_if_line_has_more_than_80_chars():
+        printed = print_ast(
+            parse(
+                '{trip(list:[["small array", "small", "small"],'
+                ' ["Lots and lots and lots and lots of text",'
+                ' "Lots and lots and lots and lots of text",'
+                ' "Lots and lots and lots and lots of text"]]){dateTime}}'
+            )
+        )
+
+        assert printed == dedent(
+            """
+            {
+              trip(
+                list: [
+                  ["small array", "small", "small"]
+                  [
+                    "Lots and lots and lots and lots of text"
+                    "Lots and lots and lots and lots of text"
+                    "Lots and lots and lots and lots of text"
+                  ]
+                ]
               ) {
                 dateTime
               }

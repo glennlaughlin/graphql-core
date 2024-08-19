@@ -1,10 +1,11 @@
+from __future__ import annotations
+
 import asyncio
 from typing import Awaitable, Tuple, TypeVar, cast
 
 from graphql.pyutils import is_awaitable
 
 from .assert_matching_values import assert_matching_values
-
 
 __all__ = ["assert_equal_awaitables_or_values"]
 

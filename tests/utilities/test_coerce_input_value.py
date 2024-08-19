@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 from math import nan
-from typing import Any, List, NamedTuple, Union
+from typing import Any, NamedTuple
 
-from pytest import raises
-
+import pytest
 from graphql.error import GraphQLError
 from graphql.pyutils import Undefined
 from graphql.type import (
@@ -21,12 +22,12 @@ from graphql.utilities import coerce_input_value
 
 class CoercedValueError(NamedTuple):
     error: str
-    path: List[Union[str, int]]
+    path: list[str | int]
     value: Any
 
 
 class CoercedValue(NamedTuple):
-    errors: List[CoercedValueError]
+    errors: list[CoercedValueError]
     value: Any
 
 
@@ -35,13 +36,13 @@ def expect_value(result: CoercedValue) -> Any:
     return result.value
 
 
-def expect_errors(result: CoercedValue) -> List[CoercedValueError]:
+def expect_errors(result: CoercedValue) -> list[CoercedValueError]:
     return result.errors
 
 
 def describe_coerce_input_value():
     def _coerce_value(input_value: Any, type_: GraphQLInputType):
-        errors: List[CoercedValueError] = []
+        errors: list[CoercedValueError] = []
         append = errors.append
 
         def on_error(path, invalid_value, error):
@@ -362,14 +363,14 @@ def describe_coerce_input_value():
 
     def describe_with_default_on_error():
         def throw_error_without_path():
-            with raises(GraphQLError) as exc_info:
+            with pytest.raises(GraphQLError) as exc_info:
                 assert coerce_input_value(None, GraphQLNonNull(GraphQLInt))
             assert exc_info.value.message == (
                 "Invalid value None: Expected non-nullable type 'Int!' not to be None."
             )
 
         def throw_error_with_path():
-            with raises(GraphQLError) as exc_info:
+            with pytest.raises(GraphQLError) as exc_info:
                 assert coerce_input_value(
                     [None], GraphQLList(GraphQLNonNull(GraphQLInt))
                 )

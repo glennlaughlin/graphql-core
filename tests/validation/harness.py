@@ -1,12 +1,15 @@
-from typing import List, Optional, Type
+from __future__ import annotations
 
-from graphql.error import GraphQLError
+from typing import TYPE_CHECKING, Any
+
 from graphql.language import parse
-from graphql.type import GraphQLSchema
 from graphql.utilities import build_schema
-from graphql.validation import SDLValidationRule, ValidationRule
 from graphql.validation.validate import validate, validate_sdl
 
+if TYPE_CHECKING:
+    from graphql.error import GraphQLError
+    from graphql.type import GraphQLSchema
+    from graphql.validation import ASTValidationRule
 
 __all__ = [
     "test_schema",
@@ -62,7 +65,7 @@ test_schema = build_schema(
     type Human {
       name(surname: Boolean): String
       pets: [Pet]
-      relatives: [Human]
+      relatives: [Human]!
     }
 
     enum FurColor {
@@ -122,11 +125,11 @@ test_schema = build_schema(
 
 
 def assert_validation_errors(
-    rule: Type[ValidationRule],
+    rule: type[ASTValidationRule],
     query_str: str,
-    errors: List[GraphQLError],
+    errors: list[GraphQLError | dict[str, Any]],
     schema: GraphQLSchema = test_schema,
-) -> List[GraphQLError]:
+) -> list[GraphQLError]:
     doc = parse(query_str)
     returned_errors = validate(schema, doc, [rule])
     assert returned_errors == errors
@@ -134,11 +137,11 @@ def assert_validation_errors(
 
 
 def assert_sdl_validation_errors(
-    rule: Type[SDLValidationRule],
+    rule: type[ASTValidationRule],
     sdl_str: str,
-    errors: List[GraphQLError],
-    schema: Optional[GraphQLSchema] = None,
-) -> List[GraphQLError]:
+    errors: list[GraphQLError | dict[str, Any]],
+    schema: GraphQLSchema | None = None,
+) -> list[GraphQLError]:
     doc = parse(sdl_str)
     returned_errors = validate_sdl(doc, schema, [rule])
     assert returned_errors == errors

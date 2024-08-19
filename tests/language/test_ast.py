@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import weakref
 from copy import copy, deepcopy
 
-from graphql.language import Location, Node, Source, Token, TokenKind
+from graphql.language import Location, NameNode, Node, Source, Token, TokenKind
 from graphql.pyutils import inspect
 
 
@@ -10,6 +12,13 @@ class SampleTestNode(Node):
 
     alpha: int
     beta: int
+
+
+class SampleNamedNode(Node):
+    __slots__ = "foo", "name"
+
+    foo: str
+    name: str | None
 
 
 def describe_token_class():
@@ -44,7 +53,7 @@ def describe_token_class():
         token1 = Token(TokenKind.NAME, 1, 2, 1, 2, value="test")
         token2 = Token(TokenKind.NAME, 1, 2, 1, 2, value="test")
         assert token2 == token1
-        assert not token2 != token1
+        assert token2 == token1
         token3 = Token(TokenKind.NAME, 1, 2, 1, 2, value="text")
         assert token3 != token1
         token4 = Token(TokenKind.NAME, 1, 4, 1, 2, value="test")
@@ -54,8 +63,8 @@ def describe_token_class():
 
     def can_compare_with_string():
         token = Token(TokenKind.NAME, 1, 2, 1, 2, value="test")
-        assert token == "Name 'test'"
-        assert token != "Name 'foo'"
+        assert token == "Name 'test'"  # noqa: S105
+        assert token != "Name 'foo'"  # noqa: S105
 
     def does_not_equal_incompatible_object():
         token = Token(TokenKind.NAME, 1, 2, 1, 2, value="test")
@@ -113,16 +122,16 @@ def describe_location_class():
         loc = Location(token1, token2, source)
         assert loc == (1, 3)
         assert loc == [1, 3]
-        assert not loc != (1, 3)
-        assert not loc != [1, 3]
+        assert loc == (1, 3)
+        assert loc == [1, 3]
         assert loc != (1, 2)
         assert loc != [2, 3]
 
     def does_not_equal_incompatible_object():
         loc = Location(token1, token2, source)
-        assert not loc == (1, 2, 3)
         assert loc != (1, 2, 3)
-        assert not loc == {1: 2}
+        assert loc != (1, 2, 3)
+        assert loc != {1: 2}
         assert loc != {1: 2}
 
     def can_hash():
@@ -160,11 +169,30 @@ def describe_node_class():
         node = SampleTestNode(alpha=1, beta=2, loc=3)
         assert repr(node) == "SampleTestNode at 3"
 
+    def has_representation_when_named():
+        name_node = NameNode(value="baz")
+        node = SampleNamedNode(foo="bar", name=name_node)
+        assert repr(node) == "SampleNamedNode(name='baz')"
+        node = SampleNamedNode(alpha=1, beta=2, name=name_node, loc=3)
+        assert repr(node) == "SampleNamedNode(name='baz') at 3"
+
+    def has_representation_when_named_but_name_is_none():
+        node = SampleNamedNode(alpha=1, beta=2, name=None)
+        assert repr(node) == "SampleNamedNode"
+        node = SampleNamedNode(alpha=1, beta=2, name=None, loc=3)
+        assert repr(node) == "SampleNamedNode at 3"
+
+    def has_special_representation_when_it_is_a_name_node():
+        node = NameNode(value="foo")
+        assert repr(node) == "NameNode('foo')"
+        node = NameNode(value="foo", loc=3)
+        assert repr(node) == "NameNode('foo') at 3"
+
     def can_check_equality():
         node = SampleTestNode(alpha=1, beta=2)
         node2 = SampleTestNode(alpha=1, beta=2)
         assert node2 == node
-        assert not node2 != node
+        assert node2 == node
         node2 = SampleTestNode(alpha=1, beta=1)
         assert node2 != node
         node3 = Node(alpha=1, beta=2)
@@ -186,13 +214,13 @@ def describe_node_class():
         assert not hasattr(node, "_hash")
         hash1 = hash(node)
         assert hasattr(node, "_hash")
-        assert hash1 == node._hash
+        assert hash1 == node._hash  # noqa: SLF001
         node.alpha = 2
         assert not hasattr(node, "_hash")
         hash2 = hash(node)
         assert hash2 != hash1
         assert hasattr(node, "_hash")
-        assert hash2 == node._hash
+        assert hash2 == node._hash  # noqa: SLF001
 
     def can_create_weak_reference():
         node = SampleTestNode(alpha=1, beta=2)

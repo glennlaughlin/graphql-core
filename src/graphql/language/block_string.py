@@ -1,6 +1,9 @@
-from sys import maxsize
-from typing import Collection, List
+"""Helpers for block strings"""
 
+from __future__ import annotations
+
+from sys import maxsize
+from typing import Collection
 
 __all__ = [
     "dedent_block_string_lines",
@@ -9,7 +12,7 @@ __all__ = [
 ]
 
 
-def dedent_block_string_lines(lines: Collection[str]) -> List[str]:
+def dedent_block_string_lines(lines: Collection[str]) -> list[str]:
     """Produce the value of a block string from its parsed raw value.
 
     This function works similar to CoffeeScript's block string,
@@ -94,7 +97,7 @@ def is_printable_as_block_string(value: str) -> bool:
     if is_empty_line:
         return False  # has trailing empty lines
 
-    if has_common_indent and seen_non_empty_line:
+    if has_common_indent and seen_non_empty_line:  # noqa: SIM103
         return False  # has internal indent
 
     return True

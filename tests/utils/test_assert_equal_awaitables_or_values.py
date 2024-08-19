@@ -1,11 +1,11 @@
-from pytest import mark, raises
+import pytest
 
 from . import assert_equal_awaitables_or_values
 
 
 def describe_assert_equal_awaitables_or_values():
     def throws_when_given_unequal_values():
-        with raises(AssertionError):
+        with pytest.raises(AssertionError):
             assert_equal_awaitables_or_values({}, {}, {"test": "test"})
 
     def does_not_throw_when_given_equal_values():
@@ -15,7 +15,7 @@ def describe_assert_equal_awaitables_or_values():
             == test_value
         )
 
-    @mark.asyncio
+    @pytest.mark.asyncio()
     async def does_not_throw_when_given_equal_awaitables():
         async def test_value():
             return {"test": "test"}
@@ -27,23 +27,28 @@ def describe_assert_equal_awaitables_or_values():
             == await test_value()
         )
 
-    @mark.asyncio
+    @pytest.mark.asyncio()
     async def throws_when_given_unequal_awaitables():
         async def test_value(value):
             return value
 
-        with raises(AssertionError):
+        with pytest.raises(AssertionError):
             await assert_equal_awaitables_or_values(
                 test_value({}), test_value({}), test_value({"test": "test"})
             )
 
-    @mark.asyncio
+    @pytest.mark.asyncio()
     async def throws_when_given_mixture_of_equal_values_and_awaitables():
         async def test_value():
             return {"test": "test"}
 
-        with raises(
+        value1 = await test_value()
+        value2 = test_value()
+
+        with pytest.raises(
             AssertionError,
             match=r"Received an invalid mixture of promises and values\.",
         ):
-            await assert_equal_awaitables_or_values(await test_value(), test_value())
+            await assert_equal_awaitables_or_values(value1, value2)
+
+        assert await value2 == value1

@@ -1,4 +1,8 @@
-from typing import Any, Collection, List, Union, cast
+"""Known type names rule"""
+
+from __future__ import annotations
+
+from typing import Any, Collection, cast
 
 from ...error import GraphQLError
 from ...language import (
@@ -13,7 +17,6 @@ from ...language import (
 from ...pyutils import did_you_mean, suggestion_list
 from ...type import introspection_types, specified_scalar_types
 from . import ASTValidationRule, SDLValidationContext, ValidationContext
-
 
 try:
     from typing import TypeGuard
@@ -33,7 +36,7 @@ class KnownTypeNamesRule(ASTValidationRule):
     See https://spec.graphql.org/draft/#sec-Fragment-Spread-Type-Existence
     """
 
-    def __init__(self, context: Union[ValidationContext, SDLValidationContext]):
+    def __init__(self, context: ValidationContext | SDLValidationContext) -> None:
         super().__init__(context)
         schema = context.schema
         self.existing_types_map = schema.type_map if schema else {}
@@ -52,7 +55,7 @@ class KnownTypeNamesRule(ASTValidationRule):
         _key: Any,
         parent: Node,
         _path: Any,
-        ancestors: List[Node],
+        ancestors: list[Node],
     ) -> None:
         type_name = node.name.value
         if (
@@ -85,8 +88,8 @@ standard_type_names = set(specified_scalar_types).union(introspection_types)
 
 
 def is_sdl_node(
-    value: Union[Node, Collection[Node], None]
-) -> TypeGuard[Union[TypeSystemDefinitionNode, TypeSystemExtensionNode]]:
+    value: Node | Collection[Node] | None,
+) -> TypeGuard[TypeSystemDefinitionNode | TypeSystemExtensionNode]:
     return (
         value is not None
         and not isinstance(value, list)

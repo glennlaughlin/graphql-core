@@ -1,26 +1,31 @@
-from math import nan
-from typing import Any, Callable, Dict, Optional, Union
+"""Conversion from GraphQL value AST to Python values without type."""
 
-from ..language import (
-    BooleanValueNode,
-    EnumValueNode,
-    FloatValueNode,
-    IntValueNode,
-    ListValueNode,
-    NullValueNode,
-    ObjectValueNode,
-    StringValueNode,
-    ValueNode,
-    VariableNode,
-)
+from __future__ import annotations
+
+from math import nan
+from typing import TYPE_CHECKING, Any, Callable
+
 from ..pyutils import Undefined, inspect
 
+if TYPE_CHECKING:
+    from ..language import (
+        BooleanValueNode,
+        EnumValueNode,
+        FloatValueNode,
+        IntValueNode,
+        ListValueNode,
+        NullValueNode,
+        ObjectValueNode,
+        StringValueNode,
+        ValueNode,
+        VariableNode,
+    )
 
 __all__ = ["value_from_ast_untyped"]
 
 
 def value_from_ast_untyped(
-    value_node: ValueNode, variables: Optional[Dict[str, Any]] = None
+    value_node: ValueNode, variables: dict[str, Any] | None = None
 ) -> Any:
     """Produce a Python value given a GraphQL Value AST.
 
@@ -44,9 +49,8 @@ def value_from_ast_untyped(
         return func(value_node, variables)
 
     # Not reachable. All possible value nodes have been considered.
-    raise TypeError(  # pragma: no cover
-        f"Unexpected value node: {inspect(value_node)}."
-    )
+    msg = f"Unexpected value node: {inspect(value_node)}."  # pragma: no cover
+    raise TypeError(msg)  # pragma: no cover
 
 
 def value_from_null(_value_node: NullValueNode, _variables: Any) -> Any:
@@ -68,19 +72,17 @@ def value_from_float(value_node: FloatValueNode, _variables: Any) -> Any:
 
 
 def value_from_string(
-    value_node: Union[BooleanValueNode, EnumValueNode, StringValueNode], _variables: Any
+    value_node: BooleanValueNode | EnumValueNode | StringValueNode, _variables: Any
 ) -> Any:
     return value_node.value
 
 
-def value_from_list(
-    value_node: ListValueNode, variables: Optional[Dict[str, Any]]
-) -> Any:
+def value_from_list(value_node: ListValueNode, variables: dict[str, Any] | None) -> Any:
     return [value_from_ast_untyped(node, variables) for node in value_node.values]
 
 
 def value_from_object(
-    value_node: ObjectValueNode, variables: Optional[Dict[str, Any]]
+    value_node: ObjectValueNode, variables: dict[str, Any] | None
 ) -> Any:
     return {
         field.name.value: value_from_ast_untyped(field.value, variables)
@@ -89,7 +91,7 @@ def value_from_object(
 
 
 def value_from_variable(
-    value_node: VariableNode, variables: Optional[Dict[str, Any]]
+    value_node: VariableNode, variables: dict[str, Any] | None
 ) -> Any:
     variable_name = value_node.name.value
     if not variables:
@@ -97,7 +99,7 @@ def value_from_variable(
     return variables.get(variable_name, Undefined)
 
 
-_value_from_kind_functions: Dict[str, Callable] = {
+_value_from_kind_functions: dict[str, Callable] = {
     "null_value": value_from_null,
     "int_value": value_from_int,
     "float_value": value_from_float,

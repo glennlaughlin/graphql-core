@@ -1,11 +1,12 @@
+from __future__ import annotations
+
 import pickle
 import sys
 from collections import namedtuple
 from copy import deepcopy
 from typing import Union
 
-from pytest import mark, raises
-
+import pytest
 from graphql import graphql_sync
 from graphql.language import DocumentNode, InterfaceTypeDefinitionNode, parse, print_ast
 from graphql.type import (
@@ -39,8 +40,7 @@ from graphql.utilities import build_ast_schema, build_schema, print_schema, prin
 
 from ..fixtures import big_schema_sdl  # noqa: F401
 from ..star_wars_schema import star_wars_schema
-from ..utils import dedent
-
+from ..utils import dedent, viral_sdl
 
 try:
     from typing import TypeAlias
@@ -68,12 +68,14 @@ TypeWithExtensionAstNodes: TypeAlias = GraphQLNamedType
 
 
 def expect_ast_node(obj: TypeWithAstNode, expected: str) -> None:
-    assert obj is not None and obj.ast_node is not None
+    assert obj is not None
+    assert obj.ast_node is not None
     assert print_ast(obj.ast_node) == expected
 
 
 def expect_extension_ast_nodes(obj: TypeWithExtensionAstNodes, expected: str) -> None:
-    assert obj is not None and obj.extension_ast_nodes is not None
+    assert obj is not None
+    assert obj.extension_ast_nodes is not None
     assert "\n\n".join(print_ast(node) for node in obj.extension_ast_nodes) == expected
 
 
@@ -89,7 +91,9 @@ def describe_schema_builder():
             )
         )
 
-        root_value = namedtuple("Data", "str")(123)  # type: ignore
+        root_value = namedtuple(  # noqa: PYI024
+            "Data", "str"
+        )(123)  # type: ignore
 
         result = graphql_sync(schema=schema, source="{ str }", root_value=root_value)
         assert result == ({"str": "123"}, None)
@@ -504,7 +508,8 @@ def describe_schema_builder():
             """
         )
         errors = validate_schema(schema)
-        assert errors and isinstance(errors, list)
+        assert errors
+        assert isinstance(errors, list)
 
     def custom_scalar():
         sdl = dedent(
@@ -1162,7 +1167,7 @@ def describe_schema_builder():
               foo: String @unknown
             }
             """
-        with raises(TypeError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             build_schema(sdl)
         assert str(exc_info.value) == "Unknown directive '@unknown'."
 
@@ -1181,9 +1186,24 @@ def describe_schema_builder():
               unknown: UnknownType
             }
             """
-        with raises(TypeError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             build_schema(sdl, assume_valid_sdl=True)
         assert str(exc_info.value).endswith("Unknown type: 'UnknownType'.")
+
+    def correctly_processes_viral_schema():
+        schema = build_schema(viral_sdl)
+        query_type = schema.query_type
+        assert isinstance(query_type, GraphQLNamedType)
+        assert query_type.name == "Query"
+        virus_type = schema.get_type("Virus")
+        assert isinstance(virus_type, GraphQLNamedType)
+        assert virus_type.name == "Virus"
+        mutation_type = schema.get_type("Mutation")
+        assert isinstance(mutation_type, GraphQLNamedType)
+        assert mutation_type.name == "Mutation"
+        # Though the viral schema has a 'Mutation' type, it is not used for the
+        # 'mutation' operation.
+        assert schema.mutation_type is None
 
     def describe_deepcopy_and_pickle():  # pragma: no cover
         sdl = print_schema(star_wars_schema)
@@ -1226,9 +1246,9 @@ def describe_schema_builder():
             # check that printing the copied schema gives the same SDL
             assert print_schema(copied) == sdl
 
-    @mark.slow
+    @pytest.mark.slow()
     def describe_deepcopy_and_pickle_big():  # pragma: no cover
-        @mark.timeout(20)
+        @pytest.mark.timeout(20)
         def can_deep_copy_big_schema(big_schema_sdl):  # noqa: F811
             # use our printing conventions
             big_schema_sdl = cycle_sdl(big_schema_sdl)
@@ -1240,7 +1260,7 @@ def describe_schema_builder():
             # check that printing the copied schema gives the same SDL
             assert print_schema(copied) == big_schema_sdl
 
-        @mark.timeout(60)
+        @pytest.mark.timeout(60)
         def can_pickle_and_unpickle_big_schema(big_schema_sdl):  # noqa: F811
             # use our printing conventions
             big_schema_sdl = cycle_sdl(big_schema_sdl)
@@ -1272,7 +1292,7 @@ def describe_schema_builder():
             finally:
                 sys.setrecursionlimit(limit)
 
-        @mark.timeout(60)
+        @pytest.mark.timeout(60)
         def can_deep_copy_pickled_big_schema(big_schema_sdl):  # noqa: F811
             # use our printing conventions
             big_schema_sdl = cycle_sdl(big_schema_sdl)

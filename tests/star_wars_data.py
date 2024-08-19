@@ -1,12 +1,13 @@
-"""This defines a basic set of data for our Star Wars Schema.
+"""Define a basic set of data for our Star Wars Schema.
 
-This data is hard coded for the sake of the demo, but you could imagine fetching this
+The data is hard coded for the sake of the demo, but you could imagine fetching this
 data from a backend service rather than from hardcoded JSON objects in a more complex
 demo.
 """
 
-from typing import Awaitable, Collection, Dict, Iterator, Optional
+from __future__ import annotations
 
+from typing import Awaitable, Collection, Iterator
 
 __all__ = ["get_droid", "get_friends", "get_hero", "get_human", "get_secret_backstory"]
 
@@ -27,7 +28,7 @@ class Human(Character):
     homePlanet: str
 
     # noinspection PyShadowingBuiltins
-    def __init__(self, id, name, friends, appearsIn, homePlanet):
+    def __init__(self, id, name, friends, appearsIn, homePlanet):  # noqa: A002
         self.id, self.name = id, name
         self.friends, self.appearsIn = friends, appearsIn
         self.homePlanet = homePlanet
@@ -39,7 +40,7 @@ class Droid(Character):
     primaryFunction: str
 
     # noinspection PyShadowingBuiltins
-    def __init__(self, id, name, friends, appearsIn, primaryFunction):
+    def __init__(self, id, name, friends, appearsIn, primaryFunction):  # noqa: A002
         self.id, self.name = id, name
         self.friends, self.appearsIn = friends, appearsIn
         self.primaryFunction = primaryFunction
@@ -81,7 +82,7 @@ tarkin = Human(
     id="1004", name="Wilhuff Tarkin", friends=["1001"], appearsIn=[4], homePlanet=None
 )
 
-human_data: Dict[str, Human] = {
+human_data: dict[str, Human] = {
     "1000": luke,
     "1001": vader,
     "1002": han,
@@ -105,17 +106,17 @@ artoo = Droid(
     primaryFunction="Astromech",
 )
 
-droid_data: Dict[str, Droid] = {"2000": threepio, "2001": artoo}
+droid_data: dict[str, Droid] = {"2000": threepio, "2001": artoo}
 
 
 # noinspection PyShadowingBuiltins
-async def get_character(id: str) -> Optional[Character]:
+async def get_character(id: str) -> Character | None:  # noqa: A002
     """Helper function to get a character by ID."""
     # We use an async function just to illustrate that GraphQL-core supports it.
     return human_data.get(id) or droid_data.get(id)
 
 
-def get_friends(character: Character) -> Iterator[Awaitable[Optional[Character]]]:
+def get_friends(character: Character) -> Iterator[Awaitable[Character | None]]:
     """Allows us to query for a character's friends."""
     # Notice that GraphQL-core accepts iterators of awaitables.
     return map(get_character, character.friends)
@@ -131,18 +132,18 @@ def get_hero(episode: int) -> Character:
 
 
 # noinspection PyShadowingBuiltins
-def get_human(id: str) -> Optional[Human]:
+def get_human(id: str) -> Human | None:  # noqa: A002
     """Allows us to query for the human with the given id."""
     return human_data.get(id)
 
 
 # noinspection PyShadowingBuiltins
-def get_droid(id: str) -> Optional[Droid]:
+def get_droid(id: str) -> Droid | None:  # noqa: A002
     """Allows us to query for the droid with the given id."""
     return droid_data.get(id)
 
 
 # noinspection PyUnusedLocal
-def get_secret_backstory(character: Character) -> str:
+def get_secret_backstory(character: Character) -> str:  # noqa: ARG001
     """Raise an error when attempting to get the secret backstory."""
     raise RuntimeError("secretBackstory is secret.")

@@ -1,10 +1,15 @@
-from typing import Any
+"""No schema introspection rule"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 from ....error import GraphQLError
-from ....language import FieldNode
 from ....type import get_named_type, is_introspection_type
 from .. import ValidationRule
 
+if TYPE_CHECKING:
+    from ....language import FieldNode
 
 __all__ = ["NoSchemaIntrospectionCustomRule"]
 

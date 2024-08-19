@@ -1,3 +1,7 @@
+"""Value inspection for error messages"""
+
+from __future__ import annotations
+
 from inspect import (
     isasyncgen,
     isasyncgenfunction,
@@ -9,10 +13,9 @@ from inspect import (
     isgeneratorfunction,
     ismethod,
 )
-from typing import Any, List
+from typing import Any
 
 from .undefined import Undefined
-
 
 __all__ = ["inspect"]
 
@@ -35,7 +38,7 @@ def inspect(value: Any) -> str:
     return inspect_recursive(value, [])
 
 
-def inspect_recursive(value: Any, seen_values: List) -> str:
+def inspect_recursive(value: Any, seen_values: list) -> str:
     if value is None or value is Undefined or isinstance(value, (bool, float, complex)):
         return repr(value)
     if isinstance(value, (int, str, bytes, bytearray)):
@@ -84,20 +87,18 @@ def inspect_recursive(value: Any, seen_values: List) -> str:
             if isinstance(value, frozenset):
                 return f"frozenset({{{s}}})"
             return f"[{s}]"
-    else:
-        # handle collections that are nested too deep
-        if isinstance(value, (list, tuple, dict, set, frozenset)):
-            if not value:
-                return repr(value)
-            if isinstance(value, list):
-                return "[...]"
-            if isinstance(value, tuple):
-                return "(...)"
-            if isinstance(value, dict):
-                return "{...}"
-            if isinstance(value, set):
-                return "set(...)"
-            return "frozenset(...)"
+    elif isinstance(value, (list, tuple, dict, set, frozenset)):
+        if not value:
+            return repr(value)
+        if isinstance(value, list):
+            return "[...]"
+        if isinstance(value, tuple):
+            return "(...)"
+        if isinstance(value, dict):
+            return "{...}"
+        if isinstance(value, set):
+            return "set(...)"
+        return "frozenset(...)"
     if isinstance(value, Exception):
         type_ = "exception"
         value = type(value)
@@ -141,7 +142,7 @@ def inspect_recursive(value: Any, seen_values: List) -> str:
         try:
             name = type(value).__name__
             if not name or "<" in name or ">" in name:
-                raise AttributeError
+                raise AttributeError  # noqa: TRY301
         except AttributeError:
             return "<object>"
         else:
@@ -149,7 +150,7 @@ def inspect_recursive(value: Any, seen_values: List) -> str:
     try:
         name = value.__name__
         if not name or "<" in name or ">" in name:
-            raise AttributeError
+            raise AttributeError  # noqa: TRY301
     except AttributeError:
         return f"<{type_}>"
     else:
@@ -165,7 +166,7 @@ def trunc_str(s: str) -> str:
     return s
 
 
-def trunc_list(s: List) -> List:
+def trunc_list(s: list) -> list:
     """Truncate lists to maximum length."""
     if len(s) > max_list_size:
         i = max_list_size // 2

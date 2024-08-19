@@ -1,3 +1,7 @@
+"""Value literals of correct type rule"""
+
+from __future__ import annotations
+
 from typing import Any, cast
 
 from ...error import GraphQLError
@@ -28,7 +32,6 @@ from ...type import (
     is_required_input_field,
 )
 from . import ValidationRule
-
 
 __all__ = ["ValuesOfCorrectTypeRule"]
 
@@ -147,7 +150,7 @@ class ValuesOfCorrectTypeRule(ValidationRule):
                 )
         except GraphQLError as error:
             self.report_error(error)
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001
             self.report_error(
                 GraphQLError(
                     f"Expected value of type '{location_type}',"

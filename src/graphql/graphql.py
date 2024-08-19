@@ -1,11 +1,15 @@
+"""Execute a GraphQL operation"""
+
+from __future__ import annotations
+
 from asyncio import ensure_future
-from inspect import isawaitable
-from typing import Any, Awaitable, Callable, Dict, Optional, Type, Union, cast
+from typing import Any, Awaitable, Callable, cast
 
 from .error import GraphQLError
 from .execution import ExecutionContext, ExecutionResult, Middleware, execute
 from .language import Source, parse
 from .pyutils import AwaitableOrValue
+from .pyutils import is_awaitable as default_is_awaitable
 from .type import (
     GraphQLFieldResolver,
     GraphQLSchema,
@@ -13,22 +17,21 @@ from .type import (
     validate_schema,
 )
 
-
 __all__ = ["graphql", "graphql_sync"]
 
 
 async def graphql(
     schema: GraphQLSchema,
-    source: Union[str, Source],
+    source: str | Source,
     root_value: Any = None,
     context_value: Any = None,
-    variable_values: Optional[Dict[str, Any]] = None,
-    operation_name: Optional[str] = None,
-    field_resolver: Optional[GraphQLFieldResolver] = None,
-    type_resolver: Optional[GraphQLTypeResolver] = None,
-    middleware: Optional[Middleware] = None,
-    execution_context_class: Optional[Type[ExecutionContext]] = None,
-    is_awaitable: Optional[Callable[[Any], bool]] = None,
+    variable_values: dict[str, Any] | None = None,
+    operation_name: str | None = None,
+    field_resolver: GraphQLFieldResolver | None = None,
+    type_resolver: GraphQLTypeResolver | None = None,
+    middleware: Middleware | None = None,
+    execution_context_class: type[ExecutionContext] | None = None,
+    is_awaitable: Callable[[Any], bool] | None = None,
 ) -> ExecutionResult:
     """Execute a GraphQL operation asynchronously.
 
@@ -38,6 +41,8 @@ async def graphql(
     More sophisticated GraphQL servers, such as those which persist queries, may wish
     to separate the validation and execution phases to a static time tooling step,
     and a server runtime step.
+
+    This function does not support incremental delivery (`@defer` and `@stream`).
 
     Accepts the following arguments:
 
@@ -90,28 +95,28 @@ async def graphql(
         is_awaitable,
     )
 
-    if isawaitable(result):
+    if default_is_awaitable(result):
         return await cast(Awaitable[ExecutionResult], result)
 
     return cast(ExecutionResult, result)
 
 
 def assume_not_awaitable(_value: Any) -> bool:
-    """Replacement for isawaitable if everything is assumed to be synchronous."""
+    """Replacement for is_awaitable if everything is assumed to be synchronous."""
     return False
 
 
 def graphql_sync(
     schema: GraphQLSchema,
-    source: Union[str, Source],
+    source: str | Source,
     root_value: Any = None,
     context_value: Any = None,
-    variable_values: Optional[Dict[str, Any]] = None,
-    operation_name: Optional[str] = None,
-    field_resolver: Optional[GraphQLFieldResolver] = None,
-    type_resolver: Optional[GraphQLTypeResolver] = None,
-    middleware: Optional[Middleware] = None,
-    execution_context_class: Optional[Type[ExecutionContext]] = None,
+    variable_values: dict[str, Any] | None = None,
+    operation_name: str | None = None,
+    field_resolver: GraphQLFieldResolver | None = None,
+    type_resolver: GraphQLTypeResolver | None = None,
+    middleware: Middleware | None = None,
+    execution_context_class: type[ExecutionContext] | None = None,
     check_sync: bool = False,
 ) -> ExecutionResult:
     """Execute a GraphQL operation synchronously.
@@ -143,25 +148,26 @@ def graphql_sync(
     )
 
     # Assert that the execution was synchronous.
-    if isawaitable(result):
+    if default_is_awaitable(result):
         ensure_future(cast(Awaitable[ExecutionResult], result)).cancel()
-        raise RuntimeError("GraphQL execution failed to complete synchronously.")
+        msg = "GraphQL execution failed to complete synchronously."
+        raise RuntimeError(msg)
 
     return cast(ExecutionResult, result)
 
 
 def graphql_impl(
     schema: GraphQLSchema,
-    source: Union[str, Source],
+    source: str | Source,
     root_value: Any,
     context_value: Any,
-    variable_values: Optional[Dict[str, Any]],
-    operation_name: Optional[str],
-    field_resolver: Optional[GraphQLFieldResolver],
-    type_resolver: Optional[GraphQLTypeResolver],
-    middleware: Optional[Middleware],
-    execution_context_class: Optional[Type[ExecutionContext]],
-    is_awaitable: Optional[Callable[[Any], bool]],
+    variable_values: dict[str, Any] | None,
+    operation_name: str | None,
+    field_resolver: GraphQLFieldResolver | None,
+    type_resolver: GraphQLTypeResolver | None,
+    middleware: Middleware | None,
+    execution_context_class: type[ExecutionContext] | None,
+    is_awaitable: Callable[[Any], bool] | None,
 ) -> AwaitableOrValue[ExecutionResult]:
     """Execute a query, return asynchronously only if necessary."""
     # Validate Schema

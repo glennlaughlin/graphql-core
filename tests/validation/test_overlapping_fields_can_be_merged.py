@@ -5,7 +5,6 @@ from graphql.validation import OverlappingFieldsCanBeMergedRule
 
 from .harness import assert_validation_errors
 
-
 assert_errors = partial(assert_validation_errors, OverlappingFieldsCanBeMergedRule)
 
 assert_valid = partial(assert_errors, errors=[])
@@ -81,6 +80,133 @@ def describe_validate_overlapping_fields_can_be_merged():
             fragment differentDirectivesWithDifferentAliases on Dog {
               name @include(if: true)
               name @include(if: false)
+            }
+            """
+        )
+
+    def same_stream_directives_supported():
+        assert_valid(
+            """
+            fragment differentDirectivesWithDifferentAliases on Dog {
+              name @stream(label: "streamLabel", initialCount: 1)
+              name @stream(label: "streamLabel", initialCount: 1)
+            }
+            """
+        )
+
+    def different_stream_directive_label():
+        assert_errors(
+            """
+            fragment conflictingArgs on Dog {
+              name @stream(label: "streamLabel", initialCount: 1)
+              name @stream(label: "anotherLabel", initialCount: 1)
+            }
+            """,
+            [
+                {
+                    "message": "Fields 'name' conflict because they have differing"
+                    " stream directives. Use different aliases on the fields"
+                    " to fetch both if this was intentional.",
+                    "locations": [(3, 15), (4, 15)],
+                }
+            ],
+        )
+
+    def different_stream_directive_initial_count():
+        assert_errors(
+            """
+            fragment conflictingArgs on Dog {
+              name @stream(label: "streamLabel", initialCount: 1)
+              name @stream(label: "streamLabel", initialCount: 2)
+            }
+            """,
+            [
+                {
+                    "message": "Fields 'name' conflict because they have differing"
+                    " stream directives. Use different aliases on the fields"
+                    " to fetch both if this was intentional.",
+                    "locations": [(3, 15), (4, 15)],
+                }
+            ],
+        )
+
+    def different_stream_directive_first_missing_args():
+        assert_errors(
+            """
+            fragment conflictingArgs on Dog {
+              name @stream
+              name @stream(label: "streamLabel", initialCount: 1)
+            }
+            """,
+            [
+                {
+                    "message": "Fields 'name' conflict because they have differing"
+                    " stream directives. Use different aliases on the fields"
+                    " to fetch both if this was intentional.",
+                    "locations": [(3, 15), (4, 15)],
+                }
+            ],
+        )
+
+    def different_stream_directive_second_missing_args():
+        assert_errors(
+            """
+            fragment conflictingArgs on Dog {
+              name @stream(label: "streamLabel", initialCount: 1)
+              name @stream
+            }
+            """,
+            [
+                {
+                    "message": "Fields 'name' conflict because they have differing"
+                    " stream directives. Use different aliases on the fields"
+                    " to fetch both if this was intentional.",
+                    "locations": [(3, 15), (4, 15)],
+                }
+            ],
+        )
+
+    def different_stream_directive_extra_argument():
+        assert_errors(
+            """
+            fragment conflictingArgs on Dog {
+              name @stream(label: "streamLabel", initialCount: 1)
+              name @stream(label: "streamLabel", initialCount: 1, extraArg: true)
+            }""",
+            [
+                {
+                    "message": "Fields 'name' conflict because they have differing"
+                    " stream directives. Use different aliases on the fields"
+                    " to fetch both if this was intentional.",
+                    "locations": [(3, 15), (4, 15)],
+                }
+            ],
+        )
+
+    def mix_of_stream_and_no_stream():
+        assert_errors(
+            """
+            fragment conflictingArgs on Dog {
+              name @stream
+              name
+            }
+            """,
+            [
+                {
+                    "message": "Fields 'name' conflict because they have differing"
+                    " stream directives. Use different aliases on the fields"
+                    " to fetch both if this was intentional.",
+                    "locations": [(3, 15), (4, 15)],
+                }
+            ],
+        )
+
+    def same_stream_directive_both_missing_args():
+        assert_valid(
+            """
+            fragment conflictingArgs on Dog {
+              name @stream
+              name @stream
             }
             """
         )

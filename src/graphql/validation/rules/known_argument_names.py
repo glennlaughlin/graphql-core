@@ -1,4 +1,8 @@
-from typing import Any, Dict, List, Union, cast
+"""Known argument names on directives rule"""
+
+from __future__ import annotations
+
+from typing import Any, List, cast
 
 from ...error import GraphQLError
 from ...language import (
@@ -12,7 +16,6 @@ from ...pyutils import did_you_mean, suggestion_list
 from ...type import specified_directives
 from . import ASTValidationRule, SDLValidationContext, ValidationContext
 
-
 __all__ = ["KnownArgumentNamesRule", "KnownArgumentNamesOnDirectivesRule"]
 
 
@@ -24,11 +27,11 @@ class KnownArgumentNamesOnDirectivesRule(ASTValidationRule):
     For internal use only.
     """
 
-    context: Union[ValidationContext, SDLValidationContext]
+    context: ValidationContext | SDLValidationContext
 
-    def __init__(self, context: Union[ValidationContext, SDLValidationContext]):
+    def __init__(self, context: ValidationContext | SDLValidationContext) -> None:
         super().__init__(context)
-        directive_args: Dict[str, List[str]] = {}
+        directive_args: dict[str, list[str]] = {}
 
         schema = context.schema
         defined_directives = schema.directives if schema else specified_directives
@@ -76,7 +79,7 @@ class KnownArgumentNamesRule(KnownArgumentNamesOnDirectivesRule):
 
     context: ValidationContext
 
-    def __init__(self, context: ValidationContext):
+    def __init__(self, context: ValidationContext) -> None:
         super().__init__(context)
 
     def enter_argument(self, arg_node: ArgumentNode, *args: Any) -> None:

@@ -1,16 +1,14 @@
+"""GraphQL schema extension"""
+
+from __future__ import annotations
+
 from collections import defaultdict
 from functools import partial
 from typing import (
     Any,
     Collection,
-    DefaultDict,
-    Dict,
-    List,
     Mapping,
-    Optional,
-    Tuple,
     TypeVar,
-    Union,
     cast,
 )
 
@@ -57,13 +55,16 @@ from ..type import (
     GraphQLInputField,
     GraphQLInputFieldMap,
     GraphQLInputObjectType,
+    GraphQLInputObjectTypeKwargs,
     GraphQLInputType,
     GraphQLInterfaceType,
+    GraphQLInterfaceTypeKwargs,
     GraphQLList,
     GraphQLNamedType,
     GraphQLNonNull,
     GraphQLNullableType,
     GraphQLObjectType,
+    GraphQLObjectTypeKwargs,
     GraphQLOutputType,
     GraphQLScalarType,
     GraphQLSchema,
@@ -71,6 +72,7 @@ from ..type import (
     GraphQLSpecifiedByDirective,
     GraphQLType,
     GraphQLUnionType,
+    GraphQLUnionTypeKwargs,
     assert_schema,
     introspection_types,
     is_enum_type,
@@ -87,7 +89,6 @@ from ..type import (
     specified_scalar_types,
 )
 from .value_from_ast import value_from_ast
-
 
 __all__ = [
     "extend_schema",
@@ -140,12 +141,12 @@ TEN = TypeVar("TEN", bound=TypeExtensionNode)
 class TypeExtensionsMap:
     """Mappings from types to their extensions."""
 
-    scalar: DefaultDict[str, List[ScalarTypeExtensionNode]]
-    object: DefaultDict[str, List[ObjectTypeExtensionNode]]
-    interface: DefaultDict[str, List[InterfaceTypeExtensionNode]]
-    union: DefaultDict[str, List[UnionTypeExtensionNode]]
-    enum: DefaultDict[str, List[EnumTypeExtensionNode]]
-    input_object: DefaultDict[str, List[InputObjectTypeExtensionNode]]
+    scalar: defaultdict[str, list[ScalarTypeExtensionNode]]
+    object: defaultdict[str, list[ObjectTypeExtensionNode]]
+    interface: defaultdict[str, list[InterfaceTypeExtensionNode]]
+    union: defaultdict[str, list[UnionTypeExtensionNode]]
+    enum: defaultdict[str, list[EnumTypeExtensionNode]]
+    input_object: defaultdict[str, list[InputObjectTypeExtensionNode]]
 
     def __init__(self) -> None:
         self.scalar = defaultdict(list)
@@ -155,7 +156,7 @@ class TypeExtensionsMap:
         self.enum = defaultdict(list)
         self.input_object = defaultdict(list)
 
-    def for_node(self, node: TEN) -> DefaultDict[str, List[TEN]]:
+    def for_node(self, node: TEN) -> defaultdict[str, list[TEN]]:
         """Get type extensions map for the given node kind."""
         kind = node.kind
         try:
@@ -175,10 +176,10 @@ class ExtendSchemaImpl:
     For internal use only.
     """
 
-    type_map: Dict[str, GraphQLNamedType]
+    type_map: dict[str, GraphQLNamedType]
     type_extensions: TypeExtensionsMap
 
-    def __init__(self, type_extensions: TypeExtensionsMap):
+    def __init__(self, type_extensions: TypeExtensionsMap) -> None:
         self.type_map = {}
         self.type_extensions = type_extensions
 
@@ -194,17 +195,17 @@ class ExtendSchemaImpl:
         For internal use only.
         """
         # Collect the type definitions and extensions found in the document.
-        type_defs: List[TypeDefinitionNode] = []
+        type_defs: list[TypeDefinitionNode] = []
 
         type_extensions = TypeExtensionsMap()
 
         # New directives and types are separate because a directives and types can have
         # the same name. For example, a type named "skip".
-        directive_defs: List[DirectiveDefinitionNode] = []
+        directive_defs: list[DirectiveDefinitionNode] = []
 
-        schema_def: Optional[SchemaDefinitionNode] = None
+        schema_def: SchemaDefinitionNode | None = None
         # Schema extensions are collected which may add additional operation types.
-        schema_extensions: List[SchemaExtensionNode] = []
+        schema_extensions: list[SchemaExtensionNode] = []
 
         is_schema_changed = False
         for def_ in document_ast.definitions:
@@ -235,7 +236,7 @@ class ExtendSchemaImpl:
             self.type_map[name] = std_type_map.get(name) or self.build_type(type_node)
 
         # Get the extended root operation types.
-        operation_types: Dict[OperationType, GraphQLNamedType] = {}
+        operation_types: dict[OperationType, GraphQLNamedType] = {}
         for operation_type in OperationType:
             original_type = schema_kwargs[operation_type.value]
             if original_type:
@@ -248,6 +249,13 @@ class ExtendSchemaImpl:
 
         # Then produce and return the kwargs for a Schema with these types.
         get_operation = operation_types.get
+        description = (
+            schema_def.description.value
+            if schema_def and schema_def.description
+            else None
+        )
+        if description is None:
+            description = schema_kwargs["description"]
         return GraphQLSchemaKwargs(
             query=get_operation(OperationType.QUERY),  # type: ignore
             mutation=get_operation(OperationType.MUTATION),  # type: ignore
@@ -258,10 +266,8 @@ class ExtendSchemaImpl:
                 for directive in schema_kwargs["directives"]
             )
             + tuple(self.build_directive(directive) for directive in directive_defs),
-            description=schema_def.description.value
-            if schema_def and schema_def.description
-            else None,
-            extensions={},
+            description=description,
+            extensions=schema_kwargs["extensions"],
             ast_node=schema_def or schema_kwargs["ast_node"],
             extension_ast_nodes=schema_kwargs["extension_ast_nodes"]
             + tuple(schema_extensions),
@@ -270,6 +276,7 @@ class ExtendSchemaImpl:
 
     # noinspection PyTypeChecker,PyUnresolvedReferences
     def replace_type(self, type_: GraphQLType) -> GraphQLType:
+        """Replace a GraphQL type."""
         if is_list_type(type_):
             return GraphQLList(self.replace_type(type_.of_type))
         if is_non_null_type(type_):
@@ -277,6 +284,7 @@ class ExtendSchemaImpl:
         return self.replace_named_type(type_)  # type: ignore
 
     def replace_named_type(self, type_: GraphQLNamedType) -> GraphQLNamedType:
+        """Replace a named GraphQL type."""
         # Note: While this could make early assertions to get the correctly
         # typed values below, that would throw immediately while type system
         # validation with validate_schema() will produce more actionable results.
@@ -284,6 +292,7 @@ class ExtendSchemaImpl:
 
     # noinspection PyShadowingNames
     def replace_directive(self, directive: GraphQLDirective) -> GraphQLDirective:
+        """Replace a GraphQL directive."""
         if is_specified_directive(directive):
             # Builtin directives are not extended.
             return directive
@@ -299,6 +308,7 @@ class ExtendSchemaImpl:
         )
 
     def extend_named_type(self, type_: GraphQLNamedType) -> GraphQLNamedType:
+        """Extend a named GraphQL type."""
         if is_introspection_type(type_) or is_specified_scalar_type(type_):
             # Builtin types are not extended.
             return type_
@@ -316,11 +326,13 @@ class ExtendSchemaImpl:
             return self.extend_input_object_type(type_)
 
         # Not reachable. All possible types have been considered.
-        raise TypeError(f"Unexpected type: {inspect(type_)}.")  # pragma: no cover
+        msg = f"Unexpected type: {inspect(type_)}."  # pragma: no cover
+        raise TypeError(msg)  # pragma: no cover
 
     def extend_input_object_type_fields(
-        self, kwargs: Dict[str, Any], extensions: Tuple[Any, ...]
+        self, kwargs: GraphQLInputObjectTypeKwargs, extensions: tuple[Any, ...]
     ) -> GraphQLInputFieldMap:
+        """Extend GraphQL input object type fields."""
         return {
             **{
                 name: GraphQLInputField(
@@ -339,6 +351,7 @@ class ExtendSchemaImpl:
         self,
         type_: GraphQLInputObjectType,
     ) -> GraphQLInputObjectType:
+        """Extend a GraphQL input object type."""
         kwargs = type_.to_kwargs()
         extensions = tuple(self.type_extensions.input_object[kwargs["name"]])
 
@@ -353,6 +366,7 @@ class ExtendSchemaImpl:
         )
 
     def extend_enum_type(self, type_: GraphQLEnumType) -> GraphQLEnumType:
+        """Extend a GraphQL enum type."""
         kwargs = type_.to_kwargs()
         extensions = tuple(self.type_extensions.enum[kwargs["name"]])
 
@@ -365,6 +379,7 @@ class ExtendSchemaImpl:
         )
 
     def extend_scalar_type(self, type_: GraphQLScalarType) -> GraphQLScalarType:
+        """Extend a GraphQL scalar type."""
         kwargs = type_.to_kwargs()
         extensions = tuple(self.type_extensions.scalar[kwargs["name"]])
 
@@ -381,16 +396,18 @@ class ExtendSchemaImpl:
         )
 
     def extend_object_type_interfaces(
-        self, kwargs: Dict[str, Any], extensions: Tuple[Any, ...]
-    ) -> List[GraphQLInterfaceType]:
+        self, kwargs: GraphQLObjectTypeKwargs, extensions: tuple[Any, ...]
+    ) -> list[GraphQLInterfaceType]:
+        """Extend a GraphQL object type interface."""
         return [
             cast(GraphQLInterfaceType, self.replace_named_type(interface))
             for interface in kwargs["interfaces"]
         ] + self.build_interfaces(extensions)
 
     def extend_object_type_fields(
-        self, kwargs: Dict[str, Any], extensions: Tuple[Any, ...]
+        self, kwargs: GraphQLObjectTypeKwargs, extensions: tuple[Any, ...]
     ) -> GraphQLFieldMap:
+        """Extend GraphQL object type fields."""
         return {
             **{
                 name: self.extend_field(field)
@@ -401,6 +418,7 @@ class ExtendSchemaImpl:
 
     # noinspection PyShadowingNames
     def extend_object_type(self, type_: GraphQLObjectType) -> GraphQLObjectType:
+        """Extend a GraphQL object type."""
         kwargs = type_.to_kwargs()
         extensions = tuple(self.type_extensions.object[kwargs["name"]])
 
@@ -416,16 +434,18 @@ class ExtendSchemaImpl:
         )
 
     def extend_interface_type_interfaces(
-        self, kwargs: Dict[str, Any], extensions: Tuple[Any, ...]
-    ) -> List[GraphQLInterfaceType]:
+        self, kwargs: GraphQLInterfaceTypeKwargs, extensions: tuple[Any, ...]
+    ) -> list[GraphQLInterfaceType]:
+        """Extend GraphQL interface type interfaces."""
         return [
             cast(GraphQLInterfaceType, self.replace_named_type(interface))
             for interface in kwargs["interfaces"]
         ] + self.build_interfaces(extensions)
 
     def extend_interface_type_fields(
-        self, kwargs: Dict[str, Any], extensions: Tuple[Any, ...]
+        self, kwargs: GraphQLInterfaceTypeKwargs, extensions: tuple[Any, ...]
     ) -> GraphQLFieldMap:
+        """Extend GraphQL interface type fields."""
         return {
             **{
                 name: self.extend_field(field)
@@ -438,6 +458,7 @@ class ExtendSchemaImpl:
     def extend_interface_type(
         self, type_: GraphQLInterfaceType
     ) -> GraphQLInterfaceType:
+        """Extend a GraphQL interface type."""
         kwargs = type_.to_kwargs()
         extensions = tuple(self.type_extensions.interface[kwargs["name"]])
 
@@ -453,14 +474,16 @@ class ExtendSchemaImpl:
         )
 
     def extend_union_type_types(
-        self, kwargs: Dict[str, Any], extensions: Tuple[Any, ...]
-    ) -> List[GraphQLObjectType]:
+        self, kwargs: GraphQLUnionTypeKwargs, extensions: tuple[Any, ...]
+    ) -> list[GraphQLObjectType]:
+        """Extend types of a GraphQL union type."""
         return [
             cast(GraphQLObjectType, self.replace_named_type(member_type))
             for member_type in kwargs["types"]
         ] + self.build_union_types(extensions)
 
     def extend_union_type(self, type_: GraphQLUnionType) -> GraphQLUnionType:
+        """Extend a GraphQL union type."""
         kwargs = type_.to_kwargs()
         extensions = tuple(self.type_extensions.union[kwargs["name"]])
 
@@ -474,6 +497,7 @@ class ExtendSchemaImpl:
 
     # noinspection PyShadowingNames
     def extend_field(self, field: GraphQLField) -> GraphQLField:
+        """Extend a GraphQL field."""
         return GraphQLField(
             **merge_kwargs(
                 field.to_kwargs(),
@@ -483,6 +507,7 @@ class ExtendSchemaImpl:
         )
 
     def extend_arg(self, arg: GraphQLArgument) -> GraphQLArgument:
+        """Extend a GraphQL argument."""
         return GraphQLArgument(
             **merge_kwargs(
                 arg.to_kwargs(),
@@ -492,8 +517,9 @@ class ExtendSchemaImpl:
 
     # noinspection PyShadowingNames
     def get_operation_types(
-        self, nodes: Collection[Union[SchemaDefinitionNode, SchemaExtensionNode]]
-    ) -> Dict[OperationType, GraphQLNamedType]:
+        self, nodes: Collection[SchemaDefinitionNode | SchemaExtensionNode]
+    ) -> dict[OperationType, GraphQLNamedType]:
+        """Extend GraphQL operation types."""
         # Note: While this could make early assertions to get the correctly
         # typed values below, that would throw immediately while type system
         # validation with validate_schema() will produce more actionable results.
@@ -505,14 +531,17 @@ class ExtendSchemaImpl:
 
     # noinspection PyShadowingNames
     def get_named_type(self, node: NamedTypeNode) -> GraphQLNamedType:
+        """Get name GraphQL type for a given named type node."""
         name = node.name.value
         type_ = std_type_map.get(name) or self.type_map.get(name)
 
         if not type_:
-            raise TypeError(f"Unknown type: '{name}'.")
+            msg = f"Unknown type: '{name}'."
+            raise TypeError(msg)
         return type_
 
     def get_wrapped_type(self, node: TypeNode) -> GraphQLType:
+        """Get wrapped GraphQL type for a given type node."""
         if isinstance(node, ListTypeNode):
             return GraphQLList(self.get_wrapped_type(node.type))
         if isinstance(node, NonNullTypeNode):
@@ -522,6 +551,7 @@ class ExtendSchemaImpl:
         return self.get_named_type(cast(NamedTypeNode, node))
 
     def build_directive(self, node: DirectiveDefinitionNode) -> GraphQLDirective:
+        """Build a GraphQL directive for a given directive definition node."""
         locations = [DirectiveLocation[node.value] for node in node.locations]
 
         return GraphQLDirective(
@@ -536,14 +566,13 @@ class ExtendSchemaImpl:
     def build_field_map(
         self,
         nodes: Collection[
-            Union[
-                InterfaceTypeDefinitionNode,
-                InterfaceTypeExtensionNode,
-                ObjectTypeDefinitionNode,
-                ObjectTypeExtensionNode,
-            ]
+            InterfaceTypeDefinitionNode
+            | InterfaceTypeExtensionNode
+            | ObjectTypeDefinitionNode
+            | ObjectTypeExtensionNode
         ],
     ) -> GraphQLFieldMap:
+        """Build a GraphQL field map."""
         field_map: GraphQLFieldMap = {}
         for node in nodes:
             for field in node.fields or []:
@@ -561,8 +590,9 @@ class ExtendSchemaImpl:
 
     def build_argument_map(
         self,
-        args: Optional[Collection[InputValueDefinitionNode]],
+        args: Collection[InputValueDefinitionNode] | None,
     ) -> GraphQLArgumentMap:
+        """Build a GraphQL argument map."""
         arg_map: GraphQLArgumentMap = {}
         for arg in args or []:
             # Note: While this could make assertions to get the correctly typed
@@ -580,10 +610,9 @@ class ExtendSchemaImpl:
 
     def build_input_field_map(
         self,
-        nodes: Collection[
-            Union[InputObjectTypeDefinitionNode, InputObjectTypeExtensionNode]
-        ],
+        nodes: Collection[InputObjectTypeDefinitionNode | InputObjectTypeExtensionNode],
     ) -> GraphQLInputFieldMap:
+        """Build a GraphQL input field map."""
         input_field_map: GraphQLInputFieldMap = {}
         for node in nodes:
             for field in node.fields or []:
@@ -602,8 +631,9 @@ class ExtendSchemaImpl:
 
     @staticmethod
     def build_enum_value_map(
-        nodes: Collection[Union[EnumTypeDefinitionNode, EnumTypeExtensionNode]]
+        nodes: Collection[EnumTypeDefinitionNode | EnumTypeExtensionNode],
     ) -> GraphQLEnumValueMap:
+        """Build a GraphQL enum value map."""
         enum_value_map: GraphQLEnumValueMap = {}
         for node in nodes:
             for value in node.values or []:
@@ -622,14 +652,13 @@ class ExtendSchemaImpl:
     def build_interfaces(
         self,
         nodes: Collection[
-            Union[
-                InterfaceTypeDefinitionNode,
-                InterfaceTypeExtensionNode,
-                ObjectTypeDefinitionNode,
-                ObjectTypeExtensionNode,
-            ]
+            InterfaceTypeDefinitionNode
+            | InterfaceTypeExtensionNode
+            | ObjectTypeDefinitionNode
+            | ObjectTypeExtensionNode
         ],
-    ) -> List[GraphQLInterfaceType]:
+    ) -> list[GraphQLInterfaceType]:
+        """Build GraphQL interface types for the given nodes."""
         # Note: While this could make assertions to get the correctly typed
         # value, that would throw immediately while type system validation
         # with validate_schema() will produce more actionable results.
@@ -641,8 +670,9 @@ class ExtendSchemaImpl:
 
     def build_union_types(
         self,
-        nodes: Collection[Union[UnionTypeDefinitionNode, UnionTypeExtensionNode]],
-    ) -> List[GraphQLObjectType]:
+        nodes: Collection[UnionTypeDefinitionNode | UnionTypeExtensionNode],
+    ) -> list[GraphQLObjectType]:
+        """Build GraphQL object types for the given union type nodes."""
         # Note: While this could make assertions to get the correctly typed
         # value, that would throw immediately while type system validation
         # with validate_schema() will produce more actionable results.
@@ -655,8 +685,9 @@ class ExtendSchemaImpl:
     def build_object_type(
         self, ast_node: ObjectTypeDefinitionNode
     ) -> GraphQLObjectType:
+        """Build a GraphQL object type for the given object type definition node."""
         extension_nodes = self.type_extensions.object[ast_node.name.value]
-        all_nodes: List[Union[ObjectTypeDefinitionNode, ObjectTypeExtensionNode]] = [
+        all_nodes: list[ObjectTypeDefinitionNode | ObjectTypeExtensionNode] = [
             ast_node,
             *extension_nodes,
         ]
@@ -673,10 +704,12 @@ class ExtendSchemaImpl:
         self,
         ast_node: InterfaceTypeDefinitionNode,
     ) -> GraphQLInterfaceType:
+        """Build a GraphQL interface type for the given type definition nodes."""
         extension_nodes = self.type_extensions.interface[ast_node.name.value]
-        all_nodes: List[
-            Union[InterfaceTypeDefinitionNode, InterfaceTypeExtensionNode]
-        ] = [ast_node, *extension_nodes]
+        all_nodes: list[InterfaceTypeDefinitionNode | InterfaceTypeExtensionNode] = [
+            ast_node,
+            *extension_nodes,
+        ]
         return GraphQLInterfaceType(
             name=ast_node.name.value,
             description=ast_node.description.value if ast_node.description else None,
@@ -687,8 +720,9 @@ class ExtendSchemaImpl:
         )
 
     def build_enum_type(self, ast_node: EnumTypeDefinitionNode) -> GraphQLEnumType:
+        """Build a GraphQL enum type for the given enum type definition nodes."""
         extension_nodes = self.type_extensions.enum[ast_node.name.value]
-        all_nodes: List[Union[EnumTypeDefinitionNode, EnumTypeExtensionNode]] = [
+        all_nodes: list[EnumTypeDefinitionNode | EnumTypeExtensionNode] = [
             ast_node,
             *extension_nodes,
         ]
@@ -701,8 +735,9 @@ class ExtendSchemaImpl:
         )
 
     def build_union_type(self, ast_node: UnionTypeDefinitionNode) -> GraphQLUnionType:
+        """Build a GraphQL union type for the given union type definition nodes."""
         extension_nodes = self.type_extensions.union[ast_node.name.value]
-        all_nodes: List[Union[UnionTypeDefinitionNode, UnionTypeExtensionNode]] = [
+        all_nodes: list[UnionTypeDefinitionNode | UnionTypeExtensionNode] = [
             ast_node,
             *extension_nodes,
         ]
@@ -717,6 +752,7 @@ class ExtendSchemaImpl:
     def build_scalar_type(
         self, ast_node: ScalarTypeDefinitionNode
     ) -> GraphQLScalarType:
+        """Build a GraphQL scalar type for the given scalar type definition node."""
         extension_nodes = self.type_extensions.scalar[ast_node.name.value]
         return GraphQLScalarType(
             name=ast_node.name.value,
@@ -730,9 +766,10 @@ class ExtendSchemaImpl:
         self,
         ast_node: InputObjectTypeDefinitionNode,
     ) -> GraphQLInputObjectType:
+        """Build a GraphQL input object type for the given node."""
         extension_nodes = self.type_extensions.input_object[ast_node.name.value]
-        all_nodes: List[
-            Union[InputObjectTypeDefinitionNode, InputObjectTypeExtensionNode]
+        all_nodes: list[
+            InputObjectTypeDefinitionNode | InputObjectTypeExtensionNode
         ] = [ast_node, *extension_nodes]
         return GraphQLInputObjectType(
             name=ast_node.name.value,
@@ -743,6 +780,7 @@ class ExtendSchemaImpl:
         )
 
     def build_type(self, ast_node: TypeDefinitionNode) -> GraphQLNamedType:
+        """Build a named GraphQL type for the given type definition node."""
         kind = ast_node.kind
         try:
             kind = kind.removesuffix("_definition")
@@ -751,23 +789,24 @@ class ExtendSchemaImpl:
                 kind = kind[:-11]
         try:
             build = getattr(self, f"build_{kind}")
-        except AttributeError:  # pragma: no cover
+        except AttributeError as error:  # pragma: no cover
             # Not reachable. All possible type definition nodes have been considered.
-            raise TypeError(  # pragma: no cover
+            msg = (  # pragma: no cover
                 f"Unexpected type definition node: {inspect(ast_node)}."
             )
+            raise TypeError(msg) from error  # pragma: no cover
         return build(ast_node)
 
 
-std_type_map: Mapping[str, Union[GraphQLNamedType, GraphQLObjectType]] = {
+std_type_map: Mapping[str, GraphQLNamedType | GraphQLObjectType] = {
     **specified_scalar_types,
     **introspection_types,
 }
 
 
 def get_deprecation_reason(
-    node: Union[EnumValueDefinitionNode, FieldDefinitionNode, InputValueDefinitionNode]
-) -> Optional[str]:
+    node: EnumValueDefinitionNode | FieldDefinitionNode | InputValueDefinitionNode,
+) -> str | None:
     """Given a field or enum value node, get deprecation reason as string."""
     from ..execution import get_directive_values
 
@@ -776,8 +815,8 @@ def get_deprecation_reason(
 
 
 def get_specified_by_url(
-    node: Union[ScalarTypeDefinitionNode, ScalarTypeExtensionNode]
-) -> Optional[str]:
+    node: ScalarTypeDefinitionNode | ScalarTypeExtensionNode,
+) -> str | None:
     """Given a scalar node, return the string value for the specifiedByURL."""
     from ..execution import get_directive_values
 

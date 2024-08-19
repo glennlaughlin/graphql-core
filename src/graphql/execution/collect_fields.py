@@ -1,14 +1,22 @@
+"""Collect fields"""
+
+from __future__ import annotations
+
+import sys
 from collections import defaultdict
-from typing import Any, Dict, List, Set, Union
+from typing import Any, Dict, List, NamedTuple
 
 from ..language import (
     FieldNode,
     FragmentDefinitionNode,
     FragmentSpreadNode,
     InlineFragmentNode,
+    OperationDefinitionNode,
+    OperationType,
     SelectionSetNode,
 )
 from ..type import (
+    GraphQLDeferDirective,
     GraphQLIncludeDirective,
     GraphQLObjectType,
     GraphQLSchema,
@@ -18,17 +26,49 @@ from ..type import (
 from ..utilities.type_from_ast import type_from_ast
 from .values import get_directive_values
 
+try:
+    from typing import TypeAlias
+except ImportError:  # Python < 3.10
+    from typing_extensions import TypeAlias
 
-__all__ = ["collect_fields", "collect_subfields"]
+
+__all__ = [
+    "collect_fields",
+    "collect_subfields",
+    "FieldGroup",
+    "FieldsAndPatches",
+    "GroupedFieldSet",
+]
+
+if sys.version_info < (3, 9):
+    FieldGroup: TypeAlias = List[FieldNode]
+    GroupedFieldSet = Dict[str, FieldGroup]
+else:  # Python >= 3.9
+    FieldGroup: TypeAlias = list[FieldNode]
+    GroupedFieldSet = dict[str, FieldGroup]
+
+
+class PatchFields(NamedTuple):
+    """Optionally labelled set of fields to be used as a patch."""
+
+    label: str | None
+    grouped_field_set: GroupedFieldSet
+
+
+class FieldsAndPatches(NamedTuple):
+    """Tuple of collected fields and patches to be applied."""
+
+    grouped_field_set: GroupedFieldSet
+    patches: list[PatchFields]
 
 
 def collect_fields(
     schema: GraphQLSchema,
-    fragments: Dict[str, FragmentDefinitionNode],
-    variable_values: Dict[str, Any],
+    fragments: dict[str, FragmentDefinitionNode],
+    variable_values: dict[str, Any],
     runtime_type: GraphQLObjectType,
-    selection_set: SelectionSetNode,
-) -> Dict[str, List[FieldNode]]:
+    operation: OperationDefinitionNode,
+) -> FieldsAndPatches:
     """Collect fields.
 
     Given a selection_set, collects all the fields and returns them.
@@ -39,20 +79,30 @@ def collect_fields(
 
     For internal use only.
     """
-    fields: Dict[str, List[FieldNode]] = defaultdict(list)
+    grouped_field_set: dict[str, list[FieldNode]] = defaultdict(list)
+    patches: list[PatchFields] = []
     collect_fields_impl(
-        schema, fragments, variable_values, runtime_type, selection_set, fields, set()
+        schema,
+        fragments,
+        variable_values,
+        operation,
+        runtime_type,
+        operation.selection_set,
+        grouped_field_set,
+        patches,
+        set(),
     )
-    return fields
+    return FieldsAndPatches(grouped_field_set, patches)
 
 
 def collect_subfields(
     schema: GraphQLSchema,
-    fragments: Dict[str, FragmentDefinitionNode],
-    variable_values: Dict[str, Any],
+    fragments: dict[str, FragmentDefinitionNode],
+    variable_values: dict[str, Any],
+    operation: OperationDefinitionNode,
     return_type: GraphQLObjectType,
-    field_nodes: List[FieldNode],
-) -> Dict[str, List[FieldNode]]:
+    field_group: FieldGroup,
+) -> FieldsAndPatches:
     """Collect subfields.
 
     Given a list of field nodes, collects all the subfields of the passed in fields,
@@ -64,77 +114,162 @@ def collect_subfields(
 
     For internal use only.
     """
-    sub_field_nodes: Dict[str, List[FieldNode]] = defaultdict(list)
-    visited_fragment_names: Set[str] = set()
-    for node in field_nodes:
+    sub_grouped_field_set: dict[str, list[FieldNode]] = defaultdict(list)
+    visited_fragment_names: set[str] = set()
+
+    sub_patches: list[PatchFields] = []
+    sub_fields_and_patches = FieldsAndPatches(sub_grouped_field_set, sub_patches)
+
+    for node in field_group:
         if node.selection_set:
             collect_fields_impl(
                 schema,
                 fragments,
                 variable_values,
+                operation,
                 return_type,
                 node.selection_set,
-                sub_field_nodes,
+                sub_grouped_field_set,
+                sub_patches,
                 visited_fragment_names,
             )
-    return sub_field_nodes
+    return sub_fields_and_patches
 
 
 def collect_fields_impl(
     schema: GraphQLSchema,
-    fragments: Dict[str, FragmentDefinitionNode],
-    variable_values: Dict[str, Any],
+    fragments: dict[str, FragmentDefinitionNode],
+    variable_values: dict[str, Any],
+    operation: OperationDefinitionNode,
     runtime_type: GraphQLObjectType,
     selection_set: SelectionSetNode,
-    fields: Dict[str, List[FieldNode]],
-    visited_fragment_names: Set[str],
+    grouped_field_set: dict[str, list[FieldNode]],
+    patches: list[PatchFields],
+    visited_fragment_names: set[str],
 ) -> None:
     """Collect fields (internal implementation)."""
+    patch_fields: dict[str, list[FieldNode]]
+
     for selection in selection_set.selections:
         if isinstance(selection, FieldNode):
             if not should_include_node(variable_values, selection):
                 continue
-            fields[get_field_entry_key(selection)].append(selection)
+            grouped_field_set[get_field_entry_key(selection)].append(selection)
         elif isinstance(selection, InlineFragmentNode):
             if not should_include_node(
                 variable_values, selection
             ) or not does_fragment_condition_match(schema, selection, runtime_type):
                 continue
-            collect_fields_impl(
-                schema,
-                fragments,
-                variable_values,
-                runtime_type,
-                selection.selection_set,
-                fields,
-                visited_fragment_names,
-            )
+
+            defer = get_defer_values(operation, variable_values, selection)
+            if defer:
+                patch_fields = defaultdict(list)
+                collect_fields_impl(
+                    schema,
+                    fragments,
+                    variable_values,
+                    operation,
+                    runtime_type,
+                    selection.selection_set,
+                    patch_fields,
+                    patches,
+                    visited_fragment_names,
+                )
+                patches.append(PatchFields(defer.label, patch_fields))
+            else:
+                collect_fields_impl(
+                    schema,
+                    fragments,
+                    variable_values,
+                    operation,
+                    runtime_type,
+                    selection.selection_set,
+                    grouped_field_set,
+                    patches,
+                    visited_fragment_names,
+                )
         elif isinstance(selection, FragmentSpreadNode):  # pragma: no cover else
             frag_name = selection.name.value
-            if frag_name in visited_fragment_names or not should_include_node(
-                variable_values, selection
-            ):
+
+            if not should_include_node(variable_values, selection):
                 continue
-            visited_fragment_names.add(frag_name)
+
+            defer = get_defer_values(operation, variable_values, selection)
+            if frag_name in visited_fragment_names and not defer:
+                continue
+
             fragment = fragments.get(frag_name)
             if not fragment or not does_fragment_condition_match(
                 schema, fragment, runtime_type
             ):
                 continue
-            collect_fields_impl(
-                schema,
-                fragments,
-                variable_values,
-                runtime_type,
-                fragment.selection_set,
-                fields,
-                visited_fragment_names,
-            )
+
+            if not defer:
+                visited_fragment_names.add(frag_name)
+
+            if defer:
+                patch_fields = defaultdict(list)
+                collect_fields_impl(
+                    schema,
+                    fragments,
+                    variable_values,
+                    operation,
+                    runtime_type,
+                    fragment.selection_set,
+                    patch_fields,
+                    patches,
+                    visited_fragment_names,
+                )
+                patches.append(PatchFields(defer.label, patch_fields))
+            else:
+                collect_fields_impl(
+                    schema,
+                    fragments,
+                    variable_values,
+                    operation,
+                    runtime_type,
+                    fragment.selection_set,
+                    grouped_field_set,
+                    patches,
+                    visited_fragment_names,
+                )
+
+
+class DeferValues(NamedTuple):
+    """Values of an active defer directive."""
+
+    label: str | None
+
+
+def get_defer_values(
+    operation: OperationDefinitionNode,
+    variable_values: dict[str, Any],
+    node: FragmentSpreadNode | InlineFragmentNode,
+) -> DeferValues | None:
+    """Get values of defer directive if active.
+
+    Returns an object containing the `@defer` arguments if a field should be
+    deferred based on the experimental flag, defer directive present and
+    not disabled by the "if" argument.
+    """
+    defer = get_directive_values(GraphQLDeferDirective, node, variable_values)
+
+    if not defer or defer.get("if") is False:
+        return None
+
+    if operation.operation == OperationType.SUBSCRIPTION:
+        msg = (
+            "`@defer` directive not supported on subscription operations."
+            " Disable `@defer` by setting the `if` argument to `false`."
+        )
+        raise TypeError(msg)
+
+    return DeferValues(defer.get("label"))
 
 
 def should_include_node(
-    variable_values: Dict[str, Any],
-    node: Union[FragmentSpreadNode, FieldNode, InlineFragmentNode],
+    variable_values: dict[str, Any],
+    node: FragmentSpreadNode | FieldNode | InlineFragmentNode,
 ) -> bool:
     """Check if node should be included
 
@@ -146,15 +281,12 @@ def should_include_node(
         return False
 
     include = get_directive_values(GraphQLIncludeDirective, node, variable_values)
-    if include and not include["if"]:
-        return False
-
-    return True
+    return not (include and not include["if"])
 
 
 def does_fragment_condition_match(
     schema: GraphQLSchema,
-    fragment: Union[FragmentDefinitionNode, InlineFragmentNode],
+    fragment: FragmentDefinitionNode | InlineFragmentNode,
     type_: GraphQLObjectType,
 ) -> bool:
     """Determine if a fragment is applicable to the given type."""
@@ -165,10 +297,11 @@ def does_fragment_condition_match(
     if conditional_type is type_:
         return True
     if is_abstract_type(conditional_type):
+        # noinspection PyTypeChecker
         return schema.is_sub_type(conditional_type, type_)
     return False
 
 
 def get_field_entry_key(node: FieldNode) -> str:
-    """Implements the logic to compute the key of a given field's entry"""
+    """Implement the logic to compute the key of a given field's entry"""
     return node.alias.value if node.alias else node.name.value

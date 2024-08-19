@@ -1,8 +1,11 @@
+"""AST concatenation"""
+
+from __future__ import annotations
+
 from itertools import chain
 from typing import Collection
 
 from ..language.ast import DocumentNode
-
 
 __all__ = ["concat_ast"]
 

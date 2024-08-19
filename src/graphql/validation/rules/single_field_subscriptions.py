@@ -1,4 +1,8 @@
-from typing import Any, Dict, cast
+"""Single field subscriptions rule"""
+
+from __future__ import annotations
+
+from typing import Any, cast
 
 from ...error import GraphQLError
 from ...execution.collect_fields import collect_fields
@@ -9,7 +13,6 @@ from ...language import (
     OperationType,
 )
 from . import ValidationRule
-
 
 __all__ = ["SingleFieldSubscriptionsRule"]
 
@@ -32,22 +35,22 @@ class SingleFieldSubscriptionsRule(ValidationRule):
         subscription_type = schema.subscription_type
         if subscription_type:
             operation_name = node.name.value if node.name else None
-            variable_values: Dict[str, Any] = {}
+            variable_values: dict[str, Any] = {}
             document = self.context.document
-            fragments: Dict[str, FragmentDefinitionNode] = {
+            fragments: dict[str, FragmentDefinitionNode] = {
                 definition.name.value: definition
                 for definition in document.definitions
                 if isinstance(definition, FragmentDefinitionNode)
             }
-            fields = collect_fields(
+            grouped_field_set = collect_fields(
                 schema,
                 fragments,
                 variable_values,
                 subscription_type,
-                node.selection_set,
-            )
-            if len(fields) > 1:
-                field_selection_lists = list(fields.values())
+                node,
+            ).grouped_field_set
+            if len(grouped_field_set) > 1:
+                field_selection_lists = list(grouped_field_set.values())
                 extra_field_selection_lists = field_selection_lists[1:]
                 extra_field_selection = [
                     field
@@ -69,8 +72,8 @@ class SingleFieldSubscriptionsRule(ValidationRule):
                         extra_field_selection,
                     )
                 )
-            for field_nodes in fields.values():
-                field_name = field_nodes[0].name.value
+            for field_group in grouped_field_set.values():
+                field_name = field_group[0].name.value
                 if field_name.startswith("__"):
                     self.report_error(
                         GraphQLError(
@@ -80,6 +83,6 @@ class SingleFieldSubscriptionsRule(ValidationRule):
                                 else f"Subscription '{operation_name}'"
                             )
                             + " must not select an introspection top level field.",
-                            field_nodes,
+                            field_group,
                         )
                     )

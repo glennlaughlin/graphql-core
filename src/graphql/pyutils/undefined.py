@@ -1,8 +1,8 @@
-from __future__ import annotations  # Python < 3.10
+"""The Undefined value"""
+
+from __future__ import annotations
 
 import warnings
-from typing import Any, Optional
-
 
 __all__ = ["Undefined", "UndefinedType"]
 
@@ -10,9 +10,10 @@ __all__ = ["Undefined", "UndefinedType"]
 class UndefinedType:
     """Auxiliary class for creating the Undefined singleton."""
 
-    _instance: Optional[UndefinedType] = None
+    _instance: UndefinedType | None = None
 
     def __new__(cls) -> UndefinedType:
+        """Create the Undefined singleton."""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         else:
@@ -33,10 +34,10 @@ class UndefinedType:
     def __bool__(self) -> bool:
         return False
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         return other is Undefined or other is None
 
-    def __ne__(self, other: Any) -> bool:
+    def __ne__(self, other: object) -> bool:
         return not self == other
 
 

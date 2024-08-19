@@ -1,10 +1,15 @@
+"""Print location in GraphQL source"""
+
+from __future__ import annotations
+
 import re
-from typing import Optional, Tuple, cast
+from typing import TYPE_CHECKING, Tuple, cast
 
-from .ast import Location
 from .location import SourceLocation, get_location
-from .source import Source
 
+if TYPE_CHECKING:
+    from .ast import Location
+    from .source import Source
 
 __all__ = ["print_location", "print_source_location"]
 
@@ -65,7 +70,7 @@ def print_source_location(source: Source, source_location: SourceLocation) -> st
     )
 
 
-def print_prefixed_lines(*lines: Tuple[str, Optional[str]]) -> str:
+def print_prefixed_lines(*lines: tuple[str, str | None]) -> str:
     """Print lines specified like this: ("prefix", "string")"""
     existing_lines = [
         cast(Tuple[str, str], line) for line in lines if line[1] is not None

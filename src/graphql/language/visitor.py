@@ -1,3 +1,7 @@
+"""AST Visitor"""
+
+from __future__ import annotations
+
 from copy import copy
 from enum import Enum
 from typing import (
@@ -5,17 +9,14 @@ from typing import (
     Callable,
     Collection,
     Dict,
-    List,
     NamedTuple,
     Optional,
     Tuple,
-    Union,
 )
 
 from ..pyutils import inspect, snake_to_camel
 from . import ast
 from .ast import QUERY_DOCUMENT_KEYS, Node
-
 
 try:
     from typing import TypeAlias
@@ -49,7 +50,7 @@ class VisitorActionEnum(Enum):
 
 VisitorAction: TypeAlias = Optional[VisitorActionEnum]
 
-# Note that in GraphQL.js these are defined differently:
+# Note that in GraphQL.js these are defined *differently*:
 # BREAK = {}, SKIP = false, REMOVE = null, IDLE = undefined
 
 BREAK = VisitorActionEnum.BREAK
@@ -63,8 +64,8 @@ VisitorKeyMap: TypeAlias = Dict[str, Tuple[str, ...]]
 class EnterLeaveVisitor(NamedTuple):
     """Visitor with functions for entering and leaving."""
 
-    enter: Optional[Callable[..., Optional[VisitorAction]]]
-    leave: Optional[Callable[..., Optional[VisitorAction]]]
+    enter: Callable[..., VisitorAction | None] | None
+    leave: Callable[..., VisitorAction | None] | None
 
 
 class Visitor:
@@ -103,7 +104,7 @@ class Visitor:
 
     You can also define node kind specific methods by suffixing them with an underscore
     followed by the kind of the node to be visited. For instance, to visit ``field``
-    nodes, you would defined the methods ``enter_field()`` and/or ``leave_field()``,
+    nodes, you would define the methods ``enter_field()`` and/or ``leave_field()``,
     with the same signature as above. If no kind specific method has been defined
     for a given node, the generic method is called.
     """
@@ -111,7 +112,7 @@ class Visitor:
     # Provide special return values as attributes
     BREAK, SKIP, REMOVE, IDLE = BREAK, SKIP, REMOVE, IDLE
 
-    enter_leave_map: Dict[str, EnterLeaveVisitor]
+    enter_leave_map: dict[str, EnterLeaveVisitor]
 
     def __init_subclass__(cls) -> None:
         """Verify that all defined handlers are valid."""
@@ -121,9 +122,9 @@ class Visitor:
                 continue
             attr_kind = attr.split("_", 1)
             if len(attr_kind) < 2:
-                kind: Optional[str] = None
+                kind: str | None = None
             else:
-                attr, kind = attr_kind
+                attr, kind = attr_kind  # noqa: PLW2901
             if attr in ("enter", "leave") and kind:
                 name = snake_to_camel(kind) + "Node"
                 node_cls = getattr(ast, name, None)
@@ -132,7 +133,8 @@ class Visitor:
                     or not isinstance(node_cls, type)
                     or not issubclass(node_cls, Node)
                 ):
-                    raise TypeError(f"Invalid AST node kind: {kind}.")
+                    msg = f"Invalid AST node kind: {kind}."
+                    raise TypeError(msg)
 
     def __init__(self) -> None:
         self.enter_leave_map = {}
@@ -158,13 +160,13 @@ class Stack(NamedTuple):
 
     in_array: bool
     idx: int
-    keys: Tuple[Node, ...]
-    edits: List[Tuple[Union[int, str], Node]]
-    prev: Any  # 'Stack' (python/mypy/issues/731)
+    keys: tuple[Node, ...]
+    edits: list[tuple[int | str, Node]]
+    prev: Stack
 
 
 def visit(
-    root: Node, visitor: Visitor, visitor_keys: Optional[VisitorKeyMap] = None
+    root: Node, visitor: Visitor, visitor_keys: VisitorKeyMap | None = None
 ) -> Any:
     """Visit each node in an AST.
 
@@ -185,24 +187,26 @@ def visit(
     dictionary visitor_keys mapping node kinds to node attributes.
     """
     if not isinstance(root, Node):
-        raise TypeError(f"Not an AST Node: {inspect(root)}.")
+        msg = f"Not an AST Node: {inspect(root)}."
+        raise TypeError(msg)
     if not isinstance(visitor, Visitor):
-        raise TypeError(f"Not an AST Visitor: {inspect(visitor)}.")
+        msg = f"Not an AST Visitor: {inspect(visitor)}."
+        raise TypeError(msg)
     if visitor_keys is None:
         visitor_keys = QUERY_DOCUMENT_KEYS
 
     stack: Any = None
     in_array = False
-    keys: Tuple[Node, ...] = (root,)
+    keys: tuple[Node, ...] = (root,)
     idx = -1
-    edits: List[Any] = []
+    edits: list[Any] = []
     node: Any = root
     key: Any = None
     parent: Any = None
-    path: List[Any] = []
+    path: list[Any] = []
     path_append = path.append
     path_pop = path.pop
-    ancestors: List[Any] = []
+    ancestors: list[Any] = []
     ancestors_append = ancestors.append
     ancestors_pop = ancestors.pop
 
@@ -250,7 +254,8 @@ def visit(
             result = None
         else:
             if not isinstance(node, Node):
-                raise TypeError(f"Invalid AST Node: {inspect(node)}.")
+                msg = f"Invalid AST Node: {inspect(node)}."
+                raise TypeError(msg)
             enter_leave = visitor.get_enter_leave_for_kind(node.kind)
             visit_fn = enter_leave.leave if is_leaving else enter_leave.enter
             if visit_fn:
@@ -308,11 +313,11 @@ class ParallelVisitor(Visitor):
     If a prior visitor edits a node, no following visitors will see that node.
     """
 
-    def __init__(self, visitors: Collection[Visitor]):
+    def __init__(self, visitors: Collection[Visitor]) -> None:
         """Create a new visitor from the given list of parallel visitors."""
         super().__init__()
         self.visitors = visitors
-        self.skipping: List[Any] = [None] * len(visitors)
+        self.skipping: list[Any] = [None] * len(visitors)
 
     def get_enter_leave_for_kind(self, kind: str) -> EnterLeaveVisitor:
         """Given a node kind, return the EnterLeaveVisitor for that kind."""
@@ -320,8 +325,8 @@ class ParallelVisitor(Visitor):
             return self.enter_leave_map[kind]
         except KeyError:
             has_visitor = False
-            enter_list: List[Optional[Callable[..., Optional[VisitorAction]]]] = []
-            leave_list: List[Optional[Callable[..., Optional[VisitorAction]]]] = []
+            enter_list: list[Callable[..., VisitorAction | None] | None] = []
+            leave_list: list[Callable[..., VisitorAction | None] | None] = []
             for visitor in self.visitors:
                 enter, leave = visitor.get_enter_leave_for_kind(kind)
                 if not has_visitor and (enter or leave):
@@ -331,21 +336,20 @@ class ParallelVisitor(Visitor):
 
             if has_visitor:
 
-                def enter(node: Node, *args: Any) -> Optional[VisitorAction]:
+                def enter(node: Node, *args: Any) -> VisitorAction | None:
                     skipping = self.skipping
                     for i, fn in enumerate(enter_list):
-                        if not skipping[i]:
-                            if fn:
-                                result = fn(node, *args)
-                                if result is SKIP or result is False:
-                                    skipping[i] = node
-                                elif result is BREAK or result is True:
-                                    skipping[i] = BREAK
-                                elif result is not None:
-                                    return result
+                        if not skipping[i] and fn:
+                            result = fn(node, *args)
+                            if result is SKIP or result is False:
+                                skipping[i] = node
+                            elif result is BREAK or result is True:
+                                skipping[i] = BREAK
+                            elif result is not None:
+                                return result
                     return None
 
-                def leave(node: Node, *args: Any) -> Optional[VisitorAction]:
+                def leave(node: Node, *args: Any) -> VisitorAction | None:
                     skipping = self.skipping
                     for i, fn in enumerate(leave_list):
                         if not skipping[i]:

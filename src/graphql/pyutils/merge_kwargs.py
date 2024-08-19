@@ -1,5 +1,8 @@
-from typing import Any, Dict, TypeVar, cast
+"""Merge arguments"""
 
+from __future__ import annotations
+
+from typing import Any, Dict, TypeVar, cast
 
 T = TypeVar("T")
 

@@ -1,6 +1,19 @@
-from typing import Tuple, Type
+"""Specified rules"""
 
-from .rules import ASTValidationRule
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+# Spec Section: "Defer And Stream Directive Labels Are Unique"
+from .rules.defer_stream_directive_label import DeferStreamDirectiveLabel
+
+# Spec Section: "Defer And Stream Directives Are Used On Valid Root Field"
+from .rules.defer_stream_directive_on_root_field import DeferStreamDirectiveOnRootField
+
+# Spec Section: "Defer And Stream Directives Are Used On Valid Operations"
+from .rules.defer_stream_directive_on_valid_operations_rule import (
+    DeferStreamDirectiveOnValidOperationsRule,
+)
 
 # Spec Section: "Executable Definitions"
 from .rules.executable_definitions import ExecutableDefinitionsRule
@@ -62,9 +75,12 @@ from .rules.scalar_leafs import ScalarLeafsRule
 
 # Spec Section: "Subscriptions with Single Root Field"
 from .rules.single_field_subscriptions import SingleFieldSubscriptionsRule
-from .rules.unique_argument_definition_names import UniqueArgumentDefinitionNamesRule
+
+# Spec Section: "Stream Directives Are Used On List Fields"
+from .rules.stream_directive_on_list_field import StreamDirectiveOnListField
 
 # Spec Section: "Argument Uniqueness"
+from .rules.unique_argument_definition_names import UniqueArgumentDefinitionNamesRule
 from .rules.unique_argument_names import UniqueArgumentNamesRule
 from .rules.unique_directive_names import UniqueDirectiveNamesRule
 
@@ -96,6 +112,8 @@ from .rules.variables_are_input_types import VariablesAreInputTypesRule
 # Spec Section: "All Variable Usages Are Allowed"
 from .rules.variables_in_allowed_position import VariablesInAllowedPositionRule
 
+if TYPE_CHECKING:
+    from .rules import ASTValidationRule
 
 __all__ = ["specified_rules", "specified_sdl_rules"]
 
@@ -105,7 +123,7 @@ __all__ = ["specified_rules", "specified_sdl_rules"]
 # The order of the rules in this list has been adjusted to lead to the
 # most clear output when encountering multiple validation errors.
 
-specified_rules: Tuple[Type[ASTValidationRule], ...] = (
+specified_rules: tuple[type[ASTValidationRule], ...] = (
     ExecutableDefinitionsRule,
     UniqueOperationNamesRule,
     LoneAnonymousOperationRule,
@@ -125,6 +143,10 @@ specified_rules: Tuple[Type[ASTValidationRule], ...] = (
     NoUnusedVariablesRule,
     KnownDirectivesRule,
     UniqueDirectivesPerLocationRule,
+    DeferStreamDirectiveOnRootField,
+    DeferStreamDirectiveOnValidOperationsRule,
+    DeferStreamDirectiveLabel,
+    StreamDirectiveOnListField,
     KnownArgumentNamesRule,
     UniqueArgumentNamesRule,
     ValuesOfCorrectTypeRule,
@@ -139,7 +161,7 @@ The order of the rules in this tuple has been adjusted to lead to the
 most clear output when encountering multiple validation errors.
 """
 
-specified_sdl_rules: Tuple[Type[ASTValidationRule], ...] = (
+specified_sdl_rules: tuple[type[ASTValidationRule], ...] = (
     LoneSchemaDefinitionRule,
     UniqueOperationTypesRule,
     UniqueTypeNamesRule,

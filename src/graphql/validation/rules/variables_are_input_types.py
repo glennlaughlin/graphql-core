@@ -1,3 +1,7 @@
+"""Variables are input types rule"""
+
+from __future__ import annotations
+
 from typing import Any
 
 from ...error import GraphQLError
@@ -5,7 +9,6 @@ from ...language import VariableDefinitionNode, print_ast
 from ...type import is_input_type
 from ...utilities import type_from_ast
 from . import ValidationRule
-
 
 __all__ = ["VariablesAreInputTypesRule"]
 

@@ -1,15 +1,24 @@
+from __future__ import annotations
+
 import pickle
+import sys
 from enum import Enum
 from math import isnan, nan
-from typing import Dict
+from typing import Any, Callable
 
-from pytest import mark, raises
+try:
+    from typing import TypedDict
+except ImportError:  # Python < 3.8
+    from typing_extensions import TypedDict
 
+import pytest
 from graphql.error import GraphQLError
 from graphql.language import (
     EnumTypeDefinitionNode,
     EnumTypeExtensionNode,
     EnumValueNode,
+    FieldNode,
+    FragmentDefinitionNode,
     InputObjectTypeDefinitionNode,
     InputObjectTypeExtensionNode,
     InputValueDefinitionNode,
@@ -17,6 +26,7 @@ from graphql.language import (
     InterfaceTypeExtensionNode,
     ObjectTypeDefinitionNode,
     ObjectTypeExtensionNode,
+    OperationDefinitionNode,
     ScalarTypeDefinitionNode,
     ScalarTypeExtensionNode,
     StringValueNode,
@@ -25,7 +35,7 @@ from graphql.language import (
     ValueNode,
     parse_value,
 )
-from graphql.pyutils import Undefined
+from graphql.pyutils import Path, Undefined, is_awaitable
 from graphql.type import (
     GraphQLArgument,
     GraphQLEnumType,
@@ -38,12 +48,14 @@ from graphql.type import (
     GraphQLList,
     GraphQLNonNull,
     GraphQLObjectType,
+    GraphQLOutputType,
+    GraphQLResolveInfo,
     GraphQLScalarType,
+    GraphQLSchema,
     GraphQLString,
     GraphQLUnionType,
     introspection_types,
 )
-
 
 ScalarType = GraphQLScalarType("Scalar")
 ObjectType = GraphQLObjectType("Object", {})
@@ -80,7 +92,7 @@ def describe_type_system_scalars():
         }
 
     def accepts_a_scalar_type_defining_serialize():
-        def serialize(value):
+        def serialize(_value):
             pass
 
         scalar = GraphQLScalarType("SomeScalar", serialize)
@@ -156,23 +168,23 @@ def describe_type_system_scalars():
         assert scalar.extension_ast_nodes == tuple(extension_ast_nodes)
 
     def rejects_a_scalar_type_with_incorrectly_typed_name():
-        with raises(TypeError, match="missing .* required .* 'name'"):
+        with pytest.raises(TypeError, match="missing .* required .* 'name'"):
             # noinspection PyArgumentList
             GraphQLScalarType()  # type: ignore
-        with raises(TypeError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             # noinspection PyTypeChecker
             GraphQLScalarType(None)  # type: ignore
         assert str(exc_info.value) == "Must provide name."
-        with raises(TypeError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             # noinspection PyTypeChecker
             GraphQLScalarType(42, {})  # type: ignore
         assert str(exc_info.value) == "Expected name to be a string."
 
     def rejects_a_scalar_type_with_invalid_name():
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             GraphQLScalarType("")
         assert str(exc_info.value) == "Expected name to be a non-empty string."
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             GraphQLScalarType("bad-name")
         assert str(exc_info.value) == (
             "Names must only contain [_a-zA-Z0-9] but 'bad-name' does not."
@@ -182,7 +194,7 @@ def describe_type_system_scalars():
         def parse_literal(_node: ValueNode, _vars=None):
             return Undefined  # pragma: no cover
 
-        with raises(TypeError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             GraphQLScalarType("SomeScalar", parse_literal=parse_literal)
         assert str(exc_info.value) == (
             "SomeScalar must provide both"
@@ -413,7 +425,8 @@ def describe_type_system_objects():
             "SomeObject",
             {
                 "f": GraphQLField(
-                    ScalarType, resolve=lambda _obj, _info: {}  # pragma: no cover
+                    ScalarType,
+                    resolve=lambda _obj, _info: {},  # pragma: no cover
                 )
             },
         )
@@ -432,23 +445,23 @@ def describe_type_system_objects():
         assert object_type.extension_ast_nodes == tuple(extension_ast_nodes)
 
     def rejects_an_object_type_with_incorrectly_typed_name():
-        with raises(TypeError, match="missing .* required .* 'name'"):
+        with pytest.raises(TypeError, match="missing .* required .* 'name'"):
             # noinspection PyArgumentList
             GraphQLObjectType()  # type: ignore
-        with raises(TypeError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             # noinspection PyTypeChecker
             GraphQLObjectType(None, {})  # type: ignore
         assert str(exc_info.value) == "Must provide name."
-        with raises(TypeError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             # noinspection PyTypeChecker
             GraphQLObjectType(42, {})  # type: ignore
         assert str(exc_info.value) == "Expected name to be a string."
 
     def rejects_an_object_type_with_invalid_name():
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             GraphQLObjectType("", {})
         assert str(exc_info.value) == "Expected name to be a non-empty string."
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             GraphQLObjectType("bad-name", {})
         assert str(exc_info.value) == (
             "Names must only contain [_a-zA-Z0-9] but 'bad-name' does not."
@@ -458,7 +471,7 @@ def describe_type_system_objects():
         obj_type = GraphQLObjectType(
             "SomeObject", {"bad-name": GraphQLField(ScalarType)}
         )
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             assert not obj_type.fields
         msg = str(exc_info.value)
         assert msg == "Names must only contain [_a-zA-Z0-9] but 'bad-name' does not."
@@ -468,7 +481,7 @@ def describe_type_system_objects():
             raise RuntimeError("Oops!")
 
         obj_type = GraphQLObjectType("SomeObject", fields)
-        with raises(TypeError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             assert not obj_type.fields
         assert str(exc_info.value) == "SomeObject fields cannot be resolved. Oops!"
 
@@ -481,7 +494,7 @@ def describe_type_system_objects():
                 )
             },
         )
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             assert not obj_type.fields
         msg = str(exc_info.value)
         assert msg == (
@@ -494,7 +507,7 @@ def describe_type_system_objects():
             raise RuntimeError("Oops!")
 
         obj_type = GraphQLObjectType("SomeObject", {}, interfaces=interfaces)
-        with raises(TypeError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             assert not obj_type.interfaces
         assert str(exc_info.value) == "SomeObject interfaces cannot be resolved. Oops!"
 
@@ -531,7 +544,8 @@ def describe_type_system_interfaces():
 
     def accepts_an_interface_type_with_output_types_as_fields():
         interface = GraphQLInterfaceType(
-            "AnotherInterface", {"someField": ScalarType}  # type: ignore
+            "AnotherInterface",
+            {"someField": ScalarType},  # type: ignore
         )
         fields = interface.fields
         assert isinstance(fields, dict)
@@ -604,15 +618,15 @@ def describe_type_system_interfaces():
             raise RuntimeError("Oops!")
 
         interface = GraphQLInterfaceType("SomeInterface", fields)
-        with raises(TypeError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             assert not interface.fields
         assert str(exc_info.value) == "SomeInterface fields cannot be resolved. Oops!"
 
     def rejects_an_interface_type_with_invalid_name():
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             GraphQLInterfaceType("", {})
         assert str(exc_info.value) == "Expected name to be a non-empty string."
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             GraphQLInterfaceType("bad-name", {})
         assert str(exc_info.value) == (
             "Names must only contain [_a-zA-Z0-9] but 'bad-name' does not."
@@ -623,7 +637,7 @@ def describe_type_system_interfaces():
             raise RuntimeError("Oops!")
 
         interface = GraphQLInterfaceType("AnotherInterface", {}, interfaces)
-        with raises(TypeError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             assert not interface.interfaces
         assert (
             str(exc_info.value)
@@ -644,7 +658,9 @@ def describe_type_system_unions():
         assert union_type.types == (ObjectType,)
 
     def accepts_a_union_type_without_types():
-        with raises(TypeError, match="missing 1 required positional argument: 'types'"):
+        with pytest.raises(
+            TypeError, match="missing 1 required positional argument: 'types'"
+        ):
             # noinspection PyArgumentList
             GraphQLUnionType("SomeUnion")  # type: ignore
         union_type = GraphQLUnionType("SomeUnion", None)  # type: ignore
@@ -665,10 +681,10 @@ def describe_type_system_unions():
         assert union_type.extension_ast_nodes == tuple(extension_ast_nodes)
 
     def rejects_a_union_type_with_invalid_name():
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             GraphQLUnionType("", [])
         assert str(exc_info.value) == "Expected name to be a non-empty string."
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             GraphQLUnionType("bad-name", [])
         assert str(exc_info.value) == (
             "Names must only contain [_a-zA-Z0-9] but 'bad-name' does not."
@@ -679,7 +695,7 @@ def describe_type_system_unions():
             raise RuntimeError("Oops!")
 
         union_type = GraphQLUnionType("SomeUnion", types)
-        with raises(TypeError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             assert not union_type.types
         assert str(exc_info.value) == "SomeUnion types cannot be resolved. Oops!"
 
@@ -698,41 +714,43 @@ def describe_type_system_enums():
         assert enum_type.values == {"RED": red, "BLUE": blue}
 
     def defines_an_enum_using_a_python_enum():
-        colors = Enum("Colors", "RED BLUE")
-        enum_type = GraphQLEnumType("SomeEnum", colors)
+        Colors = Enum("Colors", "RED BLUE")
+        enum_type = GraphQLEnumType("SomeEnum", Colors)
         assert enum_type.values == {
             "RED": GraphQLEnumValue(1),
             "BLUE": GraphQLEnumValue(2),
         }
 
     def defines_an_enum_using_values_of_a_python_enum():
-        colors = Enum("Colors", "RED BLUE")
-        enum_type = GraphQLEnumType("SomeEnum", colors, names_as_values=False)
+        Colors = Enum("Colors", "RED BLUE")
+        enum_type = GraphQLEnumType("SomeEnum", Colors, names_as_values=False)
         assert enum_type.values == {
             "RED": GraphQLEnumValue(1),
             "BLUE": GraphQLEnumValue(2),
         }
 
     def defines_an_enum_using_names_of_a_python_enum():
-        colors = Enum("Colors", "RED BLUE")
-        enum_type = GraphQLEnumType("SomeEnum", colors, names_as_values=True)
+        Colors = Enum("Colors", "RED BLUE")
+        enum_type = GraphQLEnumType("SomeEnum", Colors, names_as_values=True)
         assert enum_type.values == {
             "RED": GraphQLEnumValue("RED"),
             "BLUE": GraphQLEnumValue("BLUE"),
         }
 
     def defines_an_enum_using_members_of_a_python_enum():
-        colors = Enum("Colors", "RED BLUE")
-        enum_type = GraphQLEnumType("SomeEnum", colors, names_as_values=None)
+        Colors = Enum("Colors", "RED BLUE")
+        enum_type = GraphQLEnumType("SomeEnum", Colors, names_as_values=None)
         assert enum_type.values == {
-            "RED": GraphQLEnumValue(colors.RED),
-            "BLUE": GraphQLEnumValue(colors.BLUE),
+            "RED": GraphQLEnumValue(Colors.RED),
+            "BLUE": GraphQLEnumValue(Colors.BLUE),
         }
 
     def defines_an_enum_type_with_a_description():
         description = "nice enum"
         enum_type = GraphQLEnumType(
-            "SomeEnum", {}, description=description  # type: ignore
+            "SomeEnum",
+            {},
+            description=description,
         )
         assert enum_type.description is description
         assert enum_type.to_kwargs()["description"] is description
@@ -802,30 +820,30 @@ def describe_type_system_enums():
         assert enum_type.values["FOO"].value == "fooValue"
         assert enum_type.values["BAR"].value == ["barValue"]
         assert enum_type.values["BAZ"].value is None
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             enum_type.serialize(None)
         msg = exc_info.value.message
         assert msg == "Enum 'SomeEnum' cannot represent value: None"
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             enum_type.serialize(Undefined)
         msg = exc_info.value.message
         assert msg == "Enum 'SomeEnum' cannot represent value: Undefined"
         assert enum_type.serialize("fooValue") == "FOO"
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             enum_type.serialize("FOO")
         msg = exc_info.value.message
         assert msg == "Enum 'SomeEnum' cannot represent value: 'FOO'"
         assert enum_type.serialize(["barValue"]) == "BAR"
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             enum_type.serialize("BAR")
         msg = exc_info.value.message
         assert msg == "Enum 'SomeEnum' cannot represent value: 'BAR'"
         assert enum_type.serialize("BAZ") == "BAZ"
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             enum_type.serialize("bazValue")
         msg = exc_info.value.message
         assert msg == "Enum 'SomeEnum' cannot represent value: 'bazValue'"
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             enum_type.serialize(["bazValue"])
         msg = exc_info.value.message
         assert msg == "Enum 'SomeEnum' cannot represent value: ['bazValue']"
@@ -841,37 +859,37 @@ def describe_type_system_enums():
             "SomeEnum", {"FOO": "fooValue", "BAR": ["barValue"], "BAZ": None}
         )
         assert enum_type.parse_value("FOO") == "fooValue"
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             enum_type.parse_value("fooValue")
         msg = exc_info.value.message
         assert msg == "Value 'fooValue' does not exist in 'SomeEnum' enum."
         assert enum_type.parse_value("BAR") == ["barValue"]
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             # noinspection PyTypeChecker
             enum_type.parse_value(["barValue"])  # type: ignore
         msg = exc_info.value.message
         assert msg == "Enum 'SomeEnum' cannot represent non-string value: ['barValue']."
         assert enum_type.parse_value("BAZ") is None
         assert enum_type.parse_literal(EnumValueNode(value="FOO")) == "fooValue"
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             enum_type.parse_literal(StringValueNode(value="FOO"))
         assert exc_info.value.message == (
             "Enum 'SomeEnum' cannot represent non-enum value: \"FOO\"."
             " Did you mean the enum value 'FOO'?"
         )
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             enum_type.parse_literal(EnumValueNode(value="fooValue"))
         msg = exc_info.value.message
         assert msg == "Value 'fooValue' does not exist in 'SomeEnum' enum."
         assert enum_type.parse_literal(EnumValueNode(value="BAR")) == ["barValue"]
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             enum_type.parse_literal(StringValueNode(value="BAR"))
         assert exc_info.value.message == (
             "Enum 'SomeEnum' cannot represent non-enum value: \"BAR\"."
             " Did you mean the enum value 'BAR' or 'BAZ'?"
         )
         assert enum_type.parse_literal(EnumValueNode(value="BAZ")) is None
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             enum_type.parse_literal(StringValueNode(value="BAZ"))
         assert exc_info.value.message == (
             "Enum 'SomeEnum' cannot represent non-enum value: \"BAZ\"."
@@ -883,7 +901,7 @@ def describe_type_system_enums():
         extension_ast_nodes = [EnumTypeExtensionNode()]
         enum_type = GraphQLEnumType(
             "SomeEnum",
-            {},  # type: ignore
+            {},
             ast_node=ast_node,
             extension_ast_nodes=extension_ast_nodes,
         )
@@ -891,40 +909,40 @@ def describe_type_system_enums():
         assert enum_type.extension_ast_nodes == tuple(extension_ast_nodes)
 
     def rejects_an_enum_type_with_incorrectly_typed_name():
-        with raises(TypeError, match="missing .* required .* 'name'"):
+        with pytest.raises(TypeError, match="missing .* required .* 'name'"):
             # noinspection PyArgumentList
             GraphQLEnumType()  # type: ignore
-        with raises(TypeError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             # noinspection PyTypeChecker
             GraphQLEnumType(None, {})  # type: ignore
         assert str(exc_info.value) == "Must provide name."
-        with raises(TypeError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             # noinspection PyTypeChecker
             GraphQLEnumType(42, {})  # type: ignore
         assert str(exc_info.value) == "Expected name to be a string."
 
     def rejects_an_enum_type_with_invalid_name():
-        values: Dict[str, GraphQLEnumValue] = {}
-        with raises(GraphQLError) as exc_info:
+        values: dict[str, GraphQLEnumValue] = {}
+        with pytest.raises(GraphQLError) as exc_info:
             GraphQLEnumType("", values)
         assert str(exc_info.value) == "Expected name to be a non-empty string."
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             GraphQLEnumType("bad-name", values)
         assert str(exc_info.value) == (
             "Names must only contain [_a-zA-Z0-9] but 'bad-name' does not."
         )
 
     def rejects_an_enum_type_with_incorrectly_named_values():
-        with raises(GraphQLError) as exc_info:
+        with pytest.raises(GraphQLError) as exc_info:
             GraphQLEnumType("SomeEnum", {"bad-name": GraphQLField(ScalarType)})
         msg = str(exc_info.value)
         assert msg == "Names must only contain [_a-zA-Z0-9] but 'bad-name' does not."
 
     def rejects_an_enum_type_without_values():
-        with raises(TypeError, match="missing .* required .* 'values'"):
+        with pytest.raises(TypeError, match="missing .* required .* 'values'"):
             # noinspection PyArgumentList
             GraphQLEnumType("SomeEnum")  # type: ignore
-        with raises(TypeError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             # noinspection PyTypeChecker
             GraphQLEnumType("SomeEnum", values=None)  # type: ignore
         assert str(exc_info.value) == (
@@ -932,7 +950,7 @@ def describe_type_system_enums():
         )
 
     def rejects_an_enum_type_with_incorrectly_typed_values():
-        with raises(TypeError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             # noinspection PyTypeChecker
             GraphQLEnumType("SomeEnum", [{"FOO": 10}])  # type: ignore
         assert str(exc_info.value) == (
@@ -1031,7 +1049,8 @@ def describe_type_system_input_objects():
         def accepts_an_input_object_type_with_input_type_as_field():
             # this is a shortcut syntax for simple input fields
             input_obj_type = GraphQLInputObjectType(
-                "SomeInputObject", {"f": ScalarType}  # type: ignore
+                "SomeInputObject",
+                {"f": ScalarType},  # type: ignore
             )
             field = input_obj_type.fields["f"]
             assert isinstance(field, GraphQLInputField)
@@ -1053,23 +1072,23 @@ def describe_type_system_input_objects():
             assert input_field.out_name is None
 
         def rejects_an_input_object_type_with_incorrectly_typed_name():
-            with raises(TypeError, match="missing .* required .* 'name'"):
+            with pytest.raises(TypeError, match="missing .* required .* 'name'"):
                 # noinspection PyArgumentList
                 GraphQLInputObjectType()  # type: ignore
-            with raises(TypeError) as exc_info:
+            with pytest.raises(TypeError) as exc_info:
                 # noinspection PyTypeChecker
                 GraphQLInputObjectType(None, {})  # type: ignore
             assert str(exc_info.value) == "Must provide name."
-            with raises(TypeError) as exc_info:
+            with pytest.raises(TypeError) as exc_info:
                 # noinspection PyTypeChecker
                 GraphQLInputObjectType(42, {})  # type: ignore
             assert str(exc_info.value) == "Expected name to be a string."
 
         def rejects_an_input_object_type_with_invalid_name():
-            with raises(GraphQLError) as exc_info:
+            with pytest.raises(GraphQLError) as exc_info:
                 GraphQLInputObjectType("", {})
             assert str(exc_info.value) == "Expected name to be a non-empty string."
-            with raises(GraphQLError) as exc_info:
+            with pytest.raises(GraphQLError) as exc_info:
                 GraphQLInputObjectType("bad-name", {})
             assert str(exc_info.value) == (
                 "Names must only contain [_a-zA-Z0-9] but 'bad-name' does not."
@@ -1079,7 +1098,7 @@ def describe_type_system_input_objects():
             input_obj_type = GraphQLInputObjectType(
                 "SomeInputObject", {"bad-name": GraphQLInputField(ScalarType)}
             )
-            with raises(GraphQLError) as exc_info:
+            with pytest.raises(GraphQLError) as exc_info:
                 assert not input_obj_type.fields
             msg = str(exc_info.value)
             assert msg == (
@@ -1091,40 +1110,11 @@ def describe_type_system_input_objects():
                 raise RuntimeError("Oops!")
 
             input_obj_type = GraphQLInputObjectType("SomeInputObject", fields)
-            with raises(TypeError) as exc_info:
+            with pytest.raises(TypeError) as exc_info:
                 assert not input_obj_type.fields
             assert str(exc_info.value) == (
                 "SomeInputObject fields cannot be resolved. Oops!"
             )
-
-    def describe_input_objects_fields_must_not_have_resolvers():
-        def rejects_an_input_object_type_with_resolvers():
-            def resolve():
-                pass
-
-            with raises(
-                TypeError, match="got an unexpected keyword argument 'resolve'"
-            ):
-                # noinspection PyArgumentList
-                GraphQLInputObjectType(
-                    "SomeInputObject",
-                    {
-                        "f": GraphQLInputField(  # type: ignore
-                            ScalarType,
-                            resolve=resolve,
-                        )
-                    },
-                )
-
-        def rejects_an_input_object_type_with_resolver_constant():
-            with raises(
-                TypeError, match="got an unexpected keyword argument 'resolve'"
-            ):
-                # noinspection PyArgumentList
-                GraphQLInputObjectType(
-                    "SomeInputObject",
-                    {"f": GraphQLInputField(ScalarType, resolve={})},  # type: ignore
-                )
 
 
 def describe_type_system_arguments():
@@ -1154,7 +1144,7 @@ def describe_type_system_arguments():
         assert argument.to_kwargs()["ast_node"] is ast_node
 
     def rejects_an_argument_without_type():
-        with raises(TypeError, match="missing 1 required positional argument"):
+        with pytest.raises(TypeError, match="missing 1 required positional argument"):
             # noinspection PyArgumentList
             GraphQLArgument()  # type: ignore
 
@@ -1186,7 +1176,7 @@ def describe_type_system_input_fields():
         assert input_field.to_kwargs()["ast_node"] is ast_node
 
     def rejects_an_input_field_without_type():
-        with raises(TypeError, match="missing 1 required positional argument"):
+        with pytest.raises(TypeError, match="missing 1 required positional argument"):
             # noinspection PyArgumentList
             GraphQLInputField()  # type: ignore
 
@@ -1220,7 +1210,7 @@ def describe_type_system_list():
         NonNullScalarType,
     ]
 
-    @mark.parametrize("type_", types, ids=lambda type_: type_.__class__.__name__)
+    @pytest.mark.parametrize("type_", types, ids=lambda type_: type_.__class__.__name__)
     def accepts_a_type_as_item_type_of_list(type_):
         assert GraphQLList(type_)
 
@@ -1237,7 +1227,7 @@ def describe_type_system_non_null():
         ListOfNonNullScalarsType,
     ]
 
-    @mark.parametrize("type_", types, ids=lambda type_: type_.__class__.__name__)
+    @pytest.mark.parametrize("type_", types, ids=lambda type_: type_.__class__.__name__)
     def accepts_a_type_as_nullable_type_of_non_null(type_):
         assert GraphQLNonNull(type_)
 
@@ -1292,5 +1282,60 @@ def describe_type_system_introspection_types():
     def cannot_redefine_introspection_types():
         for name, introspection_type in introspection_types.items():
             assert introspection_type.name == name
-            with raises(TypeError, match=f"Redefinition of reserved type '{name}'"):
+            with pytest.raises(
+                TypeError, match=f"Redefinition of reserved type '{name}'"
+            ):
                 introspection_type.__class__(**introspection_type.to_kwargs())
+
+
+def describe_resolve_info():
+    class InfoArgs(TypedDict):
+        """Arguments for GraphQLResolveInfo"""
+
+        field_name: str
+        field_nodes: list[FieldNode]
+        return_type: GraphQLOutputType
+        parent_type: GraphQLObjectType
+        path: Path
+        schema: GraphQLSchema
+        fragments: dict[str, FragmentDefinitionNode]
+        root_value: Any
+        operation: OperationDefinitionNode
+        variable_values: dict[str, Any]
+        is_awaitable: Callable[[Any], bool]
+
+    info_args: InfoArgs = {
+        "field_name": "foo",
+        "field_nodes": [],
+        "return_type": GraphQLString,
+        "parent_type": GraphQLObjectType("Foo", {}),
+        "path": Path(None, "foo", None),
+        "schema": GraphQLSchema(),
+        "fragments": {},
+        "root_value": None,
+        "operation": OperationDefinitionNode(),
+        "variable_values": {},
+        "is_awaitable": is_awaitable,
+    }
+
+    def resolve_info_with_unspecified_context_type_can_use_any_type():
+        info_int = GraphQLResolveInfo(**info_args, context=42)
+        assert info_int.context == 42
+        info_str = GraphQLResolveInfo(**info_args, context="foo")
+        assert info_str.context == "foo"
+
+    def resolve_info_with_unspecified_context_type_remembers_type():
+        info = GraphQLResolveInfo(**info_args, context=42)
+        assert info.context == 42
+        info = GraphQLResolveInfo(**info_args, context="foo")  # type: ignore
+        assert info.context == "foo"
+
+    @pytest.mark.skipif(
+        sys.version_info < (3, 9), reason="this needs at least Python 3.9"
+    )
+    def resolve_info_with_specified_context_type_checks_type():
+        info_int = GraphQLResolveInfo[int](**info_args, context=42)
+        assert isinstance(info_int.context, int)
+        # this should not pass type checking now:
+        info_str = GraphQLResolveInfo[int](**info_args, context="foo")  # type: ignore
+        assert isinstance(info_str.context, str)

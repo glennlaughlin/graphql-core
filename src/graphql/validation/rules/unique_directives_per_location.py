@@ -1,5 +1,9 @@
+"""Unique directive names per location rule"""
+
+from __future__ import annotations
+
 from collections import defaultdict
-from typing import Any, Dict, List, Union, cast
+from typing import Any, List, cast
 
 from ...error import GraphQLError
 from ...language import (
@@ -14,7 +18,6 @@ from ...language import (
 from ...type import specified_directives
 from . import ASTValidationRule, SDLValidationContext, ValidationContext
 
-
 __all__ = ["UniqueDirectivesPerLocationRule"]
 
 
@@ -27,11 +30,11 @@ class UniqueDirectivesPerLocationRule(ASTValidationRule):
     See https://spec.graphql.org/draft/#sec-Directives-Are-Unique-Per-Location
     """
 
-    context: Union[ValidationContext, SDLValidationContext]
+    context: ValidationContext | SDLValidationContext
 
-    def __init__(self, context: Union[ValidationContext, SDLValidationContext]):
+    def __init__(self, context: ValidationContext | SDLValidationContext) -> None:
         super().__init__(context)
-        unique_directive_map: Dict[str, bool] = {}
+        unique_directive_map: dict[str, bool] = {}
 
         schema = context.schema
         defined_directives = (
@@ -46,8 +49,8 @@ class UniqueDirectivesPerLocationRule(ASTValidationRule):
                 unique_directive_map[def_.name.value] = not def_.repeatable
         self.unique_directive_map = unique_directive_map
 
-        self.schema_directives: Dict[str, DirectiveNode] = {}
-        self.type_directives_map: Dict[str, Dict[str, DirectiveNode]] = defaultdict(
+        self.schema_directives: dict[str, DirectiveNode] = {}
+        self.type_directives_map: dict[str, dict[str, DirectiveNode]] = defaultdict(
             dict
         )
 

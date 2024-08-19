@@ -1,8 +1,7 @@
 import asyncio
-from inspect import isawaitable
 
 from graphql import ExecutionResult, build_schema, execute, parse
-
+from graphql.pyutils import is_awaitable
 
 schema = build_schema("type Query { listField: [String] }")
 document = parse("{ listField }")
@@ -11,14 +10,14 @@ document = parse("{ listField }")
 class Data:
     # noinspection PyPep8Naming
     @staticmethod
-    async def listField(info_):
+    async def listField(_info):
         for index in range(1000):
             yield index
 
 
 async def execute_async() -> ExecutionResult:
     result = execute(schema, document, Data())
-    assert isawaitable(result)
+    assert is_awaitable(result)
     return await result
 
 

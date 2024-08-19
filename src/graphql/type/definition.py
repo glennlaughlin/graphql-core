@@ -1,4 +1,6 @@
-from __future__ import annotations  # Python < 3.10
+"""GraphQL type definitions."""
+
+from __future__ import annotations
 
 from enum import Enum
 from typing import (
@@ -8,12 +10,9 @@ from typing import (
     Collection,
     Dict,
     Generic,
-    List,
     Mapping,
     NamedTuple,
     Optional,
-    Tuple,
-    Type,
     TypeVar,
     Union,
     cast,
@@ -58,7 +57,6 @@ from ..pyutils import (
 from ..utilities.value_from_ast_untyped import value_from_ast_untyped
 from .assert_name import assert_enum_value_name, assert_name
 
-
 try:
     from typing import TypedDict
 except ImportError:  # Python < 3.8
@@ -69,8 +67,7 @@ except ImportError:  # Python < 3.10
     from typing_extensions import TypeAlias, TypeGuard
 
 if TYPE_CHECKING:
-    from .schema import GraphQLSchema  # noqa: F401
-
+    from .schema import GraphQLSchema
 
 __all__ = [
     "is_type",
@@ -178,26 +175,29 @@ class GraphQLType:
 
 
 def is_type(type_: Any) -> TypeGuard[GraphQLType]:
+    """Check whether this is a GraphQL type."""
     return isinstance(type_, GraphQLType)
 
 
 def assert_type(type_: Any) -> GraphQLType:
+    """Assert that this is a GraphQL type."""
     if not is_type(type_):
-        raise TypeError(f"Expected {type_} to be a GraphQL type.")
+        msg = f"Expected {type_} to be a GraphQL type."
+        raise TypeError(msg)
     return type_
 
 
 # These types wrap and modify other types
 
-GT = TypeVar("GT", bound=GraphQLType, covariant=True)
+GT_co = TypeVar("GT_co", bound=GraphQLType, covariant=True)
 
 
-class GraphQLWrappingType(GraphQLType, Generic[GT]):
+class GraphQLWrappingType(GraphQLType, Generic[GT_co]):
     """Base class for all GraphQL wrapping types"""
 
-    of_type: GT
+    of_type: GT_co
 
-    def __init__(self, type_: GT) -> None:
+    def __init__(self, type_: GT_co) -> None:
         self.of_type = type_
 
     def __repr__(self) -> str:
@@ -205,58 +205,65 @@ class GraphQLWrappingType(GraphQLType, Generic[GT]):
 
 
 def is_wrapping_type(type_: Any) -> TypeGuard[GraphQLWrappingType]:
+    """Check whether this is a GraphQL wrapping type."""
     return isinstance(type_, GraphQLWrappingType)
 
 
 def assert_wrapping_type(type_: Any) -> GraphQLWrappingType:
+    """Assert that this is a GraphQL wrapping type."""
     if not is_wrapping_type(type_):
-        raise TypeError(f"Expected {type_} to be a GraphQL wrapping type.")
+        msg = f"Expected {type_} to be a GraphQL wrapping type."
+        raise TypeError(msg)
     return type_
 
 
 class GraphQLNamedTypeKwargs(TypedDict, total=False):
+    """Arguments for GraphQL named types"""
+
     name: str
-    description: Optional[str]
-    extensions: Dict[str, Any]
+    description: str | None
+    extensions: dict[str, Any]
     # unfortunately, we cannot make the following more specific, because they are
     # used by subclasses with different node types and typed dicts cannot be refined
-    ast_node: Optional[Any]
-    extension_ast_nodes: Tuple[Any, ...]
+    ast_node: Any | None
+    extension_ast_nodes: tuple[Any, ...]
 
 
 class GraphQLNamedType(GraphQLType):
     """Base class for all GraphQL named types"""
 
     name: str
-    description: Optional[str]
-    extensions: Dict[str, Any]
-    ast_node: Optional[TypeDefinitionNode]
-    extension_ast_nodes: Tuple[TypeExtensionNode, ...]
+    description: str | None
+    extensions: dict[str, Any]
+    ast_node: TypeDefinitionNode | None
+    extension_ast_nodes: tuple[TypeExtensionNode, ...]
 
-    reserved_types: Dict[str, GraphQLNamedType] = {}
+    reserved_types: Mapping[str, GraphQLNamedType] = {}
 
     def __new__(cls, name: str, *_args: Any, **_kwargs: Any) -> GraphQLNamedType:
+        """Create a GraphQL named type."""
         if name in cls.reserved_types:
-            raise TypeError(f"Redefinition of reserved type {name!r}")
+            msg = f"Redefinition of reserved type {name!r}"
+            raise TypeError(msg)
         return super().__new__(cls)
 
-    def __reduce__(self) -> Tuple[Callable, Tuple]:
+    def __reduce__(self) -> tuple[Callable, tuple]:
         return self._get_instance, (self.name, tuple(self.to_kwargs().items()))
 
     @classmethod
-    def _get_instance(cls, name: str, args: Tuple) -> GraphQLNamedType:
+    def _get_instance(cls, name: str, args: tuple) -> GraphQLNamedType:
         try:
             return cls.reserved_types[name]
         except KeyError:
-            return cls(**dict(args))
+            return cls(**dict(args))  # pyright: ignore
 
     def __init__(
         self,
         name: str,
-        description: Optional[str] = None,
-        extensions: Optional[Dict[str, Any]] = None,
-        ast_node: Optional[TypeDefinitionNode] = None,
-        extension_ast_nodes: Optional[Collection[TypeExtensionNode]] = None,
+        description: str | None = None,
+        extensions: dict[str, Any] | None = None,
+        ast_node: TypeDefinitionNode | None = None,
+        extension_ast_nodes: Collection[TypeExtensionNode] | None = None,
     ) -> None:
         assert_name(name)
         self.name = name
@@ -274,6 +281,7 @@ class GraphQLNamedType(GraphQLType):
         return self.name
 
     def to_kwargs(self) -> GraphQLNamedTypeKwargs:
+        """Get corresponding arguments."""
         return GraphQLNamedTypeKwargs(
             name=self.name,
             description=self.description,
@@ -310,10 +318,12 @@ GraphQLScalarLiteralParser: TypeAlias = Callable[
 
 
 class GraphQLScalarTypeKwargs(GraphQLNamedTypeKwargs, total=False):
-    serialize: Optional[GraphQLScalarSerializer]
-    parse_value: Optional[GraphQLScalarValueParser]
-    parse_literal: Optional[GraphQLScalarLiteralParser]
-    specified_by_url: Optional[str]
+    """Arguments for GraphQL scalar types"""
+
+    serialize: GraphQLScalarSerializer | None
+    parse_value: GraphQLScalarValueParser | None
+    parse_literal: GraphQLScalarLiteralParser | None
+    specified_by_url: str | None
 
 
 class GraphQLScalarType(GraphQLNamedType):
@@ -344,21 +354,21 @@ class GraphQLScalarType(GraphQLNamedType):
 
     """
 
-    specified_by_url: Optional[str]
-    ast_node: Optional[ScalarTypeDefinitionNode]
-    extension_ast_nodes: Tuple[ScalarTypeExtensionNode, ...]
+    specified_by_url: str | None
+    ast_node: ScalarTypeDefinitionNode | None
+    extension_ast_nodes: tuple[ScalarTypeExtensionNode, ...]
 
     def __init__(
         self,
         name: str,
-        serialize: Optional[GraphQLScalarSerializer] = None,
-        parse_value: Optional[GraphQLScalarValueParser] = None,
-        parse_literal: Optional[GraphQLScalarLiteralParser] = None,
-        description: Optional[str] = None,
-        specified_by_url: Optional[str] = None,
-        extensions: Optional[Dict[str, Any]] = None,
-        ast_node: Optional[ScalarTypeDefinitionNode] = None,
-        extension_ast_nodes: Optional[Collection[ScalarTypeExtensionNode]] = None,
+        serialize: GraphQLScalarSerializer | None = None,
+        parse_value: GraphQLScalarValueParser | None = None,
+        parse_literal: GraphQLScalarLiteralParser | None = None,
+        description: str | None = None,
+        specified_by_url: str | None = None,
+        extensions: dict[str, Any] | None = None,
+        ast_node: ScalarTypeDefinitionNode | None = None,
+        extension_ast_nodes: Collection[ScalarTypeExtensionNode] | None = None,
     ) -> None:
         super().__init__(
             name=name,
@@ -374,12 +384,12 @@ class GraphQLScalarType(GraphQLNamedType):
             self.parse_value = parse_value  # type: ignore
         if parse_literal is not None:
             self.parse_literal = parse_literal  # type: ignore
-        if parse_literal is not None:
-            if parse_value is None:
-                raise TypeError(
-                    f"{name} must provide"
-                    " both 'parse_value' and 'parse_literal' functions."
-                )
+        if parse_literal is not None and parse_value is None:
+            msg = (
+                f"{name} must provide"
+                " both 'parse_value' and 'parse_literal' functions."
+            )
+            raise TypeError(msg)
         self.specified_by_url = specified_by_url
 
     def __repr__(self) -> str:
@@ -407,7 +417,7 @@ class GraphQLScalarType(GraphQLNamedType):
         return value
 
     def parse_literal(
-        self, node: ValueNode, variables: Optional[Dict[str, Any]] = None
+        self, node: ValueNode, variables: dict[str, Any] | None = None
     ) -> Any:
         """Parses an externally provided literal value to use as an input.
 
@@ -417,9 +427,10 @@ class GraphQLScalarType(GraphQLNamedType):
         return self.parse_value(value_from_ast_untyped(node, variables))
 
     def to_kwargs(self) -> GraphQLScalarTypeKwargs:
+        """Get corresponding arguments."""
         # noinspection PyArgumentList
-        return GraphQLScalarTypeKwargs(  # type: ignore
-            super().to_kwargs(),
+        return GraphQLScalarTypeKwargs(
+            super().to_kwargs(),  # type: ignore
             serialize=None
             if self.serialize is GraphQLScalarType.serialize
             else self.serialize,
@@ -438,12 +449,15 @@ class GraphQLScalarType(GraphQLNamedType):
 
 
 def is_scalar_type(type_: Any) -> TypeGuard[GraphQLScalarType]:
+    """Check whether this is a GraphQL scalar type."""
     return isinstance(type_, GraphQLScalarType)
 
 
 def assert_scalar_type(type_: Any) -> GraphQLScalarType:
+    """Assert that this is a GraphQL scalar type."""
     if not is_scalar_type(type_):
-        raise TypeError(f"Expected {type_} to be a GraphQL Scalar type.")
+        msg = f"Expected {type_} to be a GraphQL Scalar type."
+        raise TypeError(msg)
     return type_
 
 
@@ -451,14 +465,16 @@ GraphQLArgumentMap: TypeAlias = Dict[str, "GraphQLArgument"]
 
 
 class GraphQLFieldKwargs(TypedDict, total=False):
+    """Arguments for GraphQL fields"""
+
     type_: GraphQLOutputType
-    args: Optional[GraphQLArgumentMap]
-    resolve: Optional[GraphQLFieldResolver]
-    subscribe: Optional[GraphQLFieldResolver]
-    description: Optional[str]
-    deprecation_reason: Optional[str]
-    extensions: Dict[str, Any]
-    ast_node: Optional[FieldDefinitionNode]
+    args: GraphQLArgumentMap | None
+    resolve: GraphQLFieldResolver | None
+    subscribe: GraphQLFieldResolver | None
+    description: str | None
+    deprecation_reason: str | None
+    extensions: dict[str, Any]
+    ast_node: FieldDefinitionNode | None
 
 
 class GraphQLField:
@@ -466,23 +482,23 @@ class GraphQLField:
 
     type: GraphQLOutputType
     args: GraphQLArgumentMap
-    resolve: Optional[GraphQLFieldResolver]
-    subscribe: Optional[GraphQLFieldResolver]
-    description: Optional[str]
-    deprecation_reason: Optional[str]
-    extensions: Dict[str, Any]
-    ast_node: Optional[FieldDefinitionNode]
+    resolve: GraphQLFieldResolver | None
+    subscribe: GraphQLFieldResolver | None
+    description: str | None
+    deprecation_reason: str | None
+    extensions: dict[str, Any]
+    ast_node: FieldDefinitionNode | None
 
     def __init__(
         self,
         type_: GraphQLOutputType,
-        args: Optional[GraphQLArgumentMap] = None,
-        resolve: Optional[GraphQLFieldResolver] = None,
-        subscribe: Optional[GraphQLFieldResolver] = None,
-        description: Optional[str] = None,
-        deprecation_reason: Optional[str] = None,
-        extensions: Optional[Dict[str, Any]] = None,
-        ast_node: Optional[FieldDefinitionNode] = None,
+        args: GraphQLArgumentMap | None = None,
+        resolve: GraphQLFieldResolver | None = None,
+        subscribe: GraphQLFieldResolver | None = None,
+        description: str | None = None,
+        deprecation_reason: str | None = None,
+        extensions: dict[str, Any] | None = None,
+        ast_node: FieldDefinitionNode | None = None,
     ) -> None:
         if args:
             args = {
@@ -508,7 +524,7 @@ class GraphQLField:
     def __str__(self) -> str:
         return f"Field: {self.type}"
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         return self is other or (
             isinstance(other, GraphQLField)
             and self.type == other.type
@@ -520,6 +536,7 @@ class GraphQLField:
         )
 
     def to_kwargs(self) -> GraphQLFieldKwargs:
+        """Get corresponding arguments."""
         return GraphQLFieldKwargs(
             type_=self.type,
             args=self.args.copy() if self.args else None,
@@ -535,28 +552,58 @@ class GraphQLField:
         return self.__class__(**self.to_kwargs())
 
 
-class GraphQLResolveInfo(NamedTuple):
-    """Collection of information passed to the resolvers.
+TContext = TypeVar("TContext")  # pylint: disable=invalid-name
 
-    This is always passed as the first argument to the resolvers.
+try:
 
-    Note that contrary to the JavaScript implementation, the context (commonly used to
-    represent an authenticated user, or request-specific caches) is included here and
-    not passed as an additional argument.
-    """
+    class GraphQLResolveInfo(NamedTuple, Generic[TContext]):  # pyright: ignore
+        """Collection of information passed to the resolvers.
 
-    field_name: str
-    field_nodes: List[FieldNode]
-    return_type: GraphQLOutputType
-    parent_type: GraphQLObjectType
-    path: Path
-    schema: "GraphQLSchema"
-    fragments: Dict[str, FragmentDefinitionNode]
-    root_value: Any
-    operation: OperationDefinitionNode
-    variable_values: Dict[str, Any]
-    context: Any
-    is_awaitable: Callable[[Any], bool]
+        This is always passed as the first argument to the resolvers.
+
+        Note that contrary to the JavaScript implementation, the context (commonly used
+        to represent an authenticated user, or request-specific caches) is included here
+        and not passed as an additional argument.
+        """
+
+        field_name: str
+        field_nodes: list[FieldNode]
+        return_type: GraphQLOutputType
+        parent_type: GraphQLObjectType
+        path: Path
+        schema: GraphQLSchema
+        fragments: dict[str, FragmentDefinitionNode]
+        root_value: Any
+        operation: OperationDefinitionNode
+        variable_values: dict[str, Any]
+        context: TContext
+        is_awaitable: Callable[[Any], bool]
+except TypeError as error:  # pragma: no cover
+    if "Multiple inheritance with NamedTuple is not supported" not in str(error):
+        raise  # only catch expected error for Python 3.9 and 3.10
+
+    class GraphQLResolveInfo(NamedTuple):  # type: ignore[no-redef]
+        """Collection of information passed to the resolvers.
+
+        This is always passed as the first argument to the resolvers.
+
+        Note that contrary to the JavaScript implementation, the context (commonly used
+        to represent an authenticated user, or request-specific caches) is included here
+        and not passed as an additional argument.
+        """
+
+        field_name: str
+        field_nodes: list[FieldNode]
+        return_type: GraphQLOutputType
+        parent_type: GraphQLObjectType
+        path: Path
+        schema: GraphQLSchema
+        fragments: dict[str, FragmentDefinitionNode]
+        root_value: Any
+        operation: OperationDefinitionNode
+        variable_values: dict[str, Any]
+        context: Any
+        is_awaitable: Callable[[Any], bool]
 
 
 # Note: Contrary to the Javascript implementation of GraphQLFieldResolver,
@@ -584,13 +631,15 @@ GraphQLFieldMap: TypeAlias = Dict[str, GraphQLField]
 
 
 class GraphQLArgumentKwargs(TypedDict, total=False):
+    """Python arguments for GraphQL arguments"""
+
     type_: GraphQLInputType
     default_value: Any
-    description: Optional[str]
-    deprecation_reason: Optional[str]
-    out_name: Optional[str]
-    extensions: Dict[str, Any]
-    ast_node: Optional[InputValueDefinitionNode]
+    description: str | None
+    deprecation_reason: str | None
+    out_name: str | None
+    extensions: dict[str, Any]
+    ast_node: InputValueDefinitionNode | None
 
 
 class GraphQLArgument:
@@ -598,21 +647,21 @@ class GraphQLArgument:
 
     type: GraphQLInputType
     default_value: Any
-    description: Optional[str]
-    deprecation_reason: Optional[str]
-    out_name: Optional[str]  # for transforming names (extension of GraphQL.js)
-    extensions: Dict[str, Any]
-    ast_node: Optional[InputValueDefinitionNode]
+    description: str | None
+    deprecation_reason: str | None
+    out_name: str | None  # for transforming names (extension of GraphQL.js)
+    extensions: dict[str, Any]
+    ast_node: InputValueDefinitionNode | None
 
     def __init__(
         self,
         type_: GraphQLInputType,
         default_value: Any = Undefined,
-        description: Optional[str] = None,
-        deprecation_reason: Optional[str] = None,
-        out_name: Optional[str] = None,
-        extensions: Optional[Dict[str, Any]] = None,
-        ast_node: Optional[InputValueDefinitionNode] = None,
+        description: str | None = None,
+        deprecation_reason: str | None = None,
+        out_name: str | None = None,
+        extensions: dict[str, Any] | None = None,
+        ast_node: InputValueDefinitionNode | None = None,
     ) -> None:
         self.type = type_
         self.default_value = default_value
@@ -622,7 +671,7 @@ class GraphQLArgument:
         self.extensions = extensions or {}
         self.ast_node = ast_node
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         return self is other or (
             isinstance(other, GraphQLArgument)
             and self.type == other.type
@@ -634,6 +683,7 @@ class GraphQLArgument:
         )
 
     def to_kwargs(self) -> GraphQLArgumentKwargs:
+        """Get corresponding arguments."""
         return GraphQLArgumentKwargs(
             type_=self.type,
             default_value=self.default_value,
@@ -649,13 +699,16 @@ class GraphQLArgument:
 
 
 def is_required_argument(arg: GraphQLArgument) -> bool:
+    """Check whether the argument is required."""
     return is_non_null_type(arg.type) and arg.default_value is Undefined
 
 
 class GraphQLObjectTypeKwargs(GraphQLNamedTypeKwargs, total=False):
+    """Arguments for GraphQL object types"""
+
     fields: GraphQLFieldMap
-    interfaces: Tuple[GraphQLInterfaceType, ...]
-    is_type_of: Optional[GraphQLIsTypeOfFn]
+    interfaces: tuple[GraphQLInterfaceType, ...]
+    is_type_of: GraphQLIsTypeOfFn | None
 
 
 class GraphQLObjectType(GraphQLNamedType):
@@ -686,20 +739,20 @@ class GraphQLObjectType(GraphQLNamedType):
 
     """
 
-    is_type_of: Optional[GraphQLIsTypeOfFn]
-    ast_node: Optional[ObjectTypeDefinitionNode]
-    extension_ast_nodes: Tuple[ObjectTypeExtensionNode, ...]
+    is_type_of: GraphQLIsTypeOfFn | None
+    ast_node: ObjectTypeDefinitionNode | None
+    extension_ast_nodes: tuple[ObjectTypeExtensionNode, ...]
 
     def __init__(
         self,
         name: str,
         fields: ThunkMapping[GraphQLField],
-        interfaces: Optional[ThunkCollection[GraphQLInterfaceType]] = None,
-        is_type_of: Optional[GraphQLIsTypeOfFn] = None,
-        extensions: Optional[Dict[str, Any]] = None,
-        description: Optional[str] = None,
-        ast_node: Optional[ObjectTypeDefinitionNode] = None,
-        extension_ast_nodes: Optional[Collection[ObjectTypeExtensionNode]] = None,
+        interfaces: ThunkCollection[GraphQLInterfaceType] | None = None,
+        is_type_of: GraphQLIsTypeOfFn | None = None,
+        extensions: dict[str, Any] | None = None,
+        description: str | None = None,
+        ast_node: ObjectTypeDefinitionNode | None = None,
+        extension_ast_nodes: Collection[ObjectTypeExtensionNode] | None = None,
     ) -> None:
         super().__init__(
             name=name,
@@ -713,9 +766,10 @@ class GraphQLObjectType(GraphQLNamedType):
         self.is_type_of = is_type_of
 
     def to_kwargs(self) -> GraphQLObjectTypeKwargs:
+        """Get corresponding arguments."""
         # noinspection PyArgumentList
-        return GraphQLObjectTypeKwargs(  # type: ignore
-            super().to_kwargs(),
+        return GraphQLObjectTypeKwargs(
+            super().to_kwargs(),  # type: ignore
             fields=self.fields.copy(),
             interfaces=self.interfaces,
             is_type_of=self.is_type_of,
@@ -731,7 +785,8 @@ class GraphQLObjectType(GraphQLNamedType):
             fields = resolve_thunk(self._fields)
         except Exception as error:
             cls = GraphQLError if isinstance(error, GraphQLError) else TypeError
-            raise cls(f"{self.name} fields cannot be resolved. {error}") from error
+            msg = f"{self.name} fields cannot be resolved. {error}"
+            raise cls(msg) from error
         return {
             assert_name(name): value
             if isinstance(value, GraphQLField)
@@ -740,7 +795,7 @@ class GraphQLObjectType(GraphQLNamedType):
         }
 
     @cached_property
-    def interfaces(self) -> Tuple[GraphQLInterfaceType, ...]:
+    def interfaces(self) -> tuple[GraphQLInterfaceType, ...]:
         """Get provided interfaces."""
         try:
             interfaces: Collection[GraphQLInterfaceType] = resolve_thunk(
@@ -748,24 +803,30 @@ class GraphQLObjectType(GraphQLNamedType):
             )
         except Exception as error:
             cls = GraphQLError if isinstance(error, GraphQLError) else TypeError
-            raise cls(f"{self.name} interfaces cannot be resolved. {error}") from error
+            msg = f"{self.name} interfaces cannot be resolved. {error}"
+            raise cls(msg) from error
         return tuple(interfaces) if interfaces else ()
 
 
 def is_object_type(type_: Any) -> TypeGuard[GraphQLObjectType]:
+    """Check whether this is a graphql object type"""
     return isinstance(type_, GraphQLObjectType)
 
 
 def assert_object_type(type_: Any) -> GraphQLObjectType:
+    """Assume that this is a graphql object type"""
     if not is_object_type(type_):
-        raise TypeError(f"Expected {type_} to be a GraphQL Object type.")
+        msg = f"Expected {type_} to be a GraphQL Object type."
+        raise TypeError(msg)
     return type_
 
 
 class GraphQLInterfaceTypeKwargs(GraphQLNamedTypeKwargs, total=False):
+    """Arguments for GraphQL interface types"""
+
     fields: GraphQLFieldMap
-    interfaces: Tuple[GraphQLInterfaceType, ...]
-    resolve_type: Optional[GraphQLTypeResolver]
+    interfaces: tuple[GraphQLInterfaceType, ...]
+    resolve_type: GraphQLTypeResolver | None
 
 
 class GraphQLInterfaceType(GraphQLNamedType):
@@ -783,20 +844,20 @@ class GraphQLInterfaceType(GraphQLNamedType):
             })
     """
 
-    resolve_type: Optional[GraphQLTypeResolver]
-    ast_node: Optional[InterfaceTypeDefinitionNode]
-    extension_ast_nodes: Tuple[InterfaceTypeExtensionNode, ...]
+    resolve_type: GraphQLTypeResolver | None
+    ast_node: InterfaceTypeDefinitionNode | None
+    extension_ast_nodes: tuple[InterfaceTypeExtensionNode, ...]
 
     def __init__(
         self,
         name: str,
         fields: ThunkMapping[GraphQLField],
-        interfaces: Optional[ThunkCollection[GraphQLInterfaceType]] = None,
-        resolve_type: Optional[GraphQLTypeResolver] = None,
-        description: Optional[str] = None,
-        extensions: Optional[Dict[str, Any]] = None,
-        ast_node: Optional[InterfaceTypeDefinitionNode] = None,
-        extension_ast_nodes: Optional[Collection[InterfaceTypeExtensionNode]] = None,
+        interfaces: ThunkCollection[GraphQLInterfaceType] | None = None,
+        resolve_type: GraphQLTypeResolver | None = None,
+        description: str | None = None,
+        extensions: dict[str, Any] | None = None,
+        ast_node: InterfaceTypeDefinitionNode | None = None,
+        extension_ast_nodes: Collection[InterfaceTypeExtensionNode] | None = None,
     ) -> None:
         super().__init__(
             name=name,
@@ -810,9 +871,10 @@ class GraphQLInterfaceType(GraphQLNamedType):
         self.resolve_type = resolve_type
 
     def to_kwargs(self) -> GraphQLInterfaceTypeKwargs:
+        """Get corresponding arguments."""
         # noinspection PyArgumentList
-        return GraphQLInterfaceTypeKwargs(  # type: ignore
-            super().to_kwargs(),
+        return GraphQLInterfaceTypeKwargs(
+            super().to_kwargs(),  # type: ignore
             fields=self.fields.copy(),
             interfaces=self.interfaces,
             resolve_type=self.resolve_type,
@@ -828,7 +890,8 @@ class GraphQLInterfaceType(GraphQLNamedType):
             fields = resolve_thunk(self._fields)
         except Exception as error:
             cls = GraphQLError if isinstance(error, GraphQLError) else TypeError
-            raise cls(f"{self.name} fields cannot be resolved. {error}") from error
+            msg = f"{self.name} fields cannot be resolved. {error}"
+            raise cls(msg) from error
         return {
             assert_name(name): value
             if isinstance(value, GraphQLField)
@@ -837,7 +900,7 @@ class GraphQLInterfaceType(GraphQLNamedType):
         }
 
     @cached_property
-    def interfaces(self) -> Tuple[GraphQLInterfaceType, ...]:
+    def interfaces(self) -> tuple[GraphQLInterfaceType, ...]:
         """Get provided interfaces."""
         try:
             interfaces: Collection[GraphQLInterfaceType] = resolve_thunk(
@@ -845,23 +908,29 @@ class GraphQLInterfaceType(GraphQLNamedType):
             )
         except Exception as error:
             cls = GraphQLError if isinstance(error, GraphQLError) else TypeError
-            raise cls(f"{self.name} interfaces cannot be resolved. {error}") from error
+            msg = f"{self.name} interfaces cannot be resolved. {error}"
+            raise cls(msg) from error
         return tuple(interfaces) if interfaces else ()
 
 
 def is_interface_type(type_: Any) -> TypeGuard[GraphQLInterfaceType]:
+    """Check whether this is a GraphQL interface type."""
     return isinstance(type_, GraphQLInterfaceType)
 
 
 def assert_interface_type(type_: Any) -> GraphQLInterfaceType:
+    """Assert that this is a GraphQL interface type."""
     if not is_interface_type(type_):
-        raise TypeError(f"Expected {type_} to be a GraphQL Interface type.")
+        msg = f"Expected {type_} to be a GraphQL Interface type."
+        raise TypeError(msg)
     return type_
 
 
 class GraphQLUnionTypeKwargs(GraphQLNamedTypeKwargs, total=False):
-    types: Tuple[GraphQLObjectType, ...]
-    resolve_type: Optional[GraphQLTypeResolver]
+    """Arguments for GraphQL union types"""
+
+    types: tuple[GraphQLObjectType, ...]
+    resolve_type: GraphQLTypeResolver | None
 
 
 class GraphQLUnionType(GraphQLNamedType):
@@ -882,19 +951,19 @@ class GraphQLUnionType(GraphQLNamedType):
         PetType = GraphQLUnionType('Pet', [DogType, CatType], resolve_type)
     """
 
-    resolve_type: Optional[GraphQLTypeResolver]
-    ast_node: Optional[UnionTypeDefinitionNode]
-    extension_ast_nodes: Tuple[UnionTypeExtensionNode, ...]
+    resolve_type: GraphQLTypeResolver | None
+    ast_node: UnionTypeDefinitionNode | None
+    extension_ast_nodes: tuple[UnionTypeExtensionNode, ...]
 
     def __init__(
         self,
         name: str,
         types: ThunkCollection[GraphQLObjectType],
-        resolve_type: Optional[GraphQLTypeResolver] = None,
-        description: Optional[str] = None,
-        extensions: Optional[Dict[str, Any]] = None,
-        ast_node: Optional[UnionTypeDefinitionNode] = None,
-        extension_ast_nodes: Optional[Collection[UnionTypeExtensionNode]] = None,
+        resolve_type: GraphQLTypeResolver | None = None,
+        description: str | None = None,
+        extensions: dict[str, Any] | None = None,
+        ast_node: UnionTypeDefinitionNode | None = None,
+        extension_ast_nodes: Collection[UnionTypeExtensionNode] | None = None,
     ) -> None:
         super().__init__(
             name=name,
@@ -907,32 +976,39 @@ class GraphQLUnionType(GraphQLNamedType):
         self.resolve_type = resolve_type
 
     def to_kwargs(self) -> GraphQLUnionTypeKwargs:
+        """Get corresponding arguments."""
         # noinspection PyArgumentList
-        return GraphQLUnionTypeKwargs(  # type: ignore
-            super().to_kwargs(), types=self.types, resolve_type=self.resolve_type
+        return GraphQLUnionTypeKwargs(
+            super().to_kwargs(),  # type: ignore
+            types=self.types,
+            resolve_type=self.resolve_type,
         )
 
     def __copy__(self) -> GraphQLUnionType:  # pragma: no cover
         return self.__class__(**self.to_kwargs())
 
     @cached_property
-    def types(self) -> Tuple[GraphQLObjectType, ...]:
+    def types(self) -> tuple[GraphQLObjectType, ...]:
         """Get provided types."""
         try:
             types: Collection[GraphQLObjectType] = resolve_thunk(self._types)
         except Exception as error:
             cls = GraphQLError if isinstance(error, GraphQLError) else TypeError
-            raise cls(f"{self.name} types cannot be resolved. {error}") from error
+            msg = f"{self.name} types cannot be resolved. {error}"
+            raise cls(msg) from error
         return tuple(types) if types else ()
 
 
 def is_union_type(type_: Any) -> TypeGuard[GraphQLUnionType]:
+    """Check whether this is a GraphQL union type."""
     return isinstance(type_, GraphQLUnionType)
 
 
 def assert_union_type(type_: Any) -> GraphQLUnionType:
+    """Assert that this is a GraphQL union type."""
     if not is_union_type(type_):
-        raise TypeError(f"Expected {type_} to be a GraphQL Union type.")
+        msg = f"Expected {type_} to be a GraphQL Union type."
+        raise TypeError(msg)
     return type_
 
 
@@ -940,8 +1016,10 @@ GraphQLEnumValueMap: TypeAlias = Dict[str, "GraphQLEnumValue"]
 
 
 class GraphQLEnumTypeKwargs(GraphQLNamedTypeKwargs, total=False):
+    """Arguments for GraphQL enum types"""
+
     values: GraphQLEnumValueMap
-    names_as_values: Optional[bool]
+    names_as_values: bool | None
 
 
 class GraphQLEnumType(GraphQLNamedType):
@@ -979,18 +1057,18 @@ class GraphQLEnumType(GraphQLNamedType):
     """
 
     values: GraphQLEnumValueMap
-    ast_node: Optional[EnumTypeDefinitionNode]
-    extension_ast_nodes: Tuple[EnumTypeExtensionNode, ...]
+    ast_node: EnumTypeDefinitionNode | None
+    extension_ast_nodes: tuple[EnumTypeExtensionNode, ...]
 
     def __init__(
         self,
         name: str,
-        values: Union[GraphQLEnumValueMap, Mapping[str, Any], Type[Enum]],
-        names_as_values: Optional[bool] = False,
-        description: Optional[str] = None,
-        extensions: Optional[Dict[str, Any]] = None,
-        ast_node: Optional[EnumTypeDefinitionNode] = None,
-        extension_ast_nodes: Optional[Collection[EnumTypeExtensionNode]] = None,
+        values: GraphQLEnumValueMap | Mapping[str, Any] | type[Enum],
+        names_as_values: bool | None = False,
+        description: str | None = None,
+        extensions: dict[str, Any] | None = None,
+        ast_node: EnumTypeDefinitionNode | None = None,
+        extension_ast_nodes: Collection[EnumTypeExtensionNode] | None = None,
     ) -> None:
         super().__init__(
             name=name,
@@ -1006,13 +1084,13 @@ class GraphQLEnumType(GraphQLNamedType):
                 isinstance(name, str) for name in values
             ):
                 try:
-                    # noinspection PyTypeChecker
-                    values = dict(values)  # type: ignore
-                except (TypeError, ValueError):
-                    raise TypeError(
+                    values = dict(values)  # pyright: ignore
+                except (TypeError, ValueError) as error:
+                    msg = (
                         f"{name} values must be an Enum or a mapping"
                         " with value names as keys."
                     )
+                    raise TypeError(msg) from error
             values = cast(Dict[str, Any], values)
         else:
             values = cast(Dict[str, Enum], values)
@@ -1029,18 +1107,20 @@ class GraphQLEnumType(GraphQLNamedType):
         self.values = values
 
     def to_kwargs(self) -> GraphQLEnumTypeKwargs:
+        """Get corresponding arguments."""
         # noinspection PyArgumentList
-        return GraphQLEnumTypeKwargs(  # type: ignore
-            super().to_kwargs(), values=self.values.copy()
+        return GraphQLEnumTypeKwargs(
+            super().to_kwargs(),  # type: ignore
+            values=self.values.copy(),
         )
 
     def __copy__(self) -> GraphQLEnumType:  # pragma: no cover
         return self.__class__(**self.to_kwargs())
 
     @cached_property
-    def _value_lookup(self) -> Dict[Any, str]:
+    def _value_lookup(self) -> dict[Any, str]:
         # use first value or name as lookup
-        lookup: Dict[Any, str] = {}
+        lookup: dict[Any, str] = {}
         for name, enum_value in self.values.items():
             value = enum_value.value
             if value is None or value is Undefined:
@@ -1053,6 +1133,7 @@ class GraphQLEnumType(GraphQLNamedType):
         return lookup
 
     def serialize(self, output_value: Any) -> str:
+        """Serialize an output value."""
         try:
             return self._value_lookup[output_value]
         except KeyError:  # hashable value not found
@@ -1061,86 +1142,97 @@ class GraphQLEnumType(GraphQLNamedType):
             for enum_name, enum_value in self.values.items():
                 if enum_value.value == output_value:
                     return enum_name
-        raise GraphQLError(
-            f"Enum '{self.name}' cannot represent value: {inspect(output_value)}"
-        )
+        msg = f"Enum '{self.name}' cannot represent value: {inspect(output_value)}"
+        raise GraphQLError(msg)
 
     def parse_value(self, input_value: str) -> Any:
+        """Parse an enum value."""
         if isinstance(input_value, str):
             try:
                 enum_value = self.values[input_value]
-            except KeyError:
-                raise GraphQLError(
+            except KeyError as error:
+                msg = (
                     f"Value '{input_value}' does not exist in '{self.name}' enum."
                     + did_you_mean_enum_value(self, input_value)
                 )
+                raise GraphQLError(msg) from error
             return enum_value.value
         value_str = inspect(input_value)
-        raise GraphQLError(
+        msg = (
             f"Enum '{self.name}' cannot represent non-string value: {value_str}."
             + did_you_mean_enum_value(self, value_str)
         )
+        raise GraphQLError(msg)
 
     def parse_literal(
-        self, value_node: ValueNode, _variables: Optional[Dict[str, Any]] = None
+        self, value_node: ValueNode, _variables: dict[str, Any] | None = None
     ) -> Any:
+        """Parse literal value."""
         # Note: variables will be resolved before calling this method.
         if isinstance(value_node, EnumValueNode):
             try:
                 enum_value = self.values[value_node.value]
-            except KeyError:
+            except KeyError as error:
                 value_str = print_ast(value_node)
-                raise GraphQLError(
+                msg = (
                     f"Value '{value_str}' does not exist in '{self.name}' enum."
-                    + did_you_mean_enum_value(self, value_str),
-                    value_node,
+                    + did_you_mean_enum_value(self, value_str)
                 )
+                raise GraphQLError(msg, value_node) from error
             return enum_value.value
         value_str = print_ast(value_node)
-        raise GraphQLError(
+        msg = (
             f"Enum '{self.name}' cannot represent non-enum value: {value_str}."
-            + did_you_mean_enum_value(self, value_str),
-            value_node,
+            + did_you_mean_enum_value(self, value_str)
         )
+        raise GraphQLError(msg, value_node)
 
 
 def is_enum_type(type_: Any) -> TypeGuard[GraphQLEnumType]:
+    """Check whether this is a GraphQL enum type."""
     return isinstance(type_, GraphQLEnumType)
 
 
 def assert_enum_type(type_: Any) -> GraphQLEnumType:
+    """Assert that this is a GraphQL enum type."""
     if not is_enum_type(type_):
-        raise TypeError(f"Expected {type_} to be a GraphQL Enum type.")
+        msg = f"Expected {type_} to be a GraphQL Enum type."
+        raise TypeError(msg)
     return type_
 
 
 def did_you_mean_enum_value(enum_type: GraphQLEnumType, unknown_value_str: str) -> str:
+    """Return suggestions for enum value."""
     suggested_values = suggestion_list(unknown_value_str, enum_type.values)
     return did_you_mean(suggested_values, "the enum value")
 
 
 class GraphQLEnumValueKwargs(TypedDict, total=False):
+    """Arguments for GraphQL enum values"""
+
     value: Any
-    description: Optional[str]
-    deprecation_reason: Optional[str]
-    extensions: Dict[str, Any]
-    ast_node: Optional[EnumValueDefinitionNode]
+    description: str | None
+    deprecation_reason: str | None
+    extensions: dict[str, Any]
+    ast_node: EnumValueDefinitionNode | None
 
 
 class GraphQLEnumValue:
+    """A GraphQL enum value."""
+
     value: Any
-    description: Optional[str]
-    deprecation_reason: Optional[str]
-    extensions: Dict[str, Any]
-    ast_node: Optional[EnumValueDefinitionNode]
+    description: str | None
+    deprecation_reason: str | None
+    extensions: dict[str, Any]
+    ast_node: EnumValueDefinitionNode | None
 
     def __init__(
         self,
         value: Any = None,
-        description: Optional[str] = None,
-        deprecation_reason: Optional[str] = None,
-        extensions: Optional[Dict[str, Any]] = None,
-        ast_node: Optional[EnumValueDefinitionNode] = None,
+        description: str | None = None,
+        deprecation_reason: str | None = None,
+        extensions: dict[str, Any] | None = None,
+        ast_node: EnumValueDefinitionNode | None = None,
     ) -> None:
         self.value = value
         self.description = description
@@ -1148,7 +1240,7 @@ class GraphQLEnumValue:
         self.extensions = extensions or {}
         self.ast_node = ast_node
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         return self is other or (
             isinstance(other, GraphQLEnumValue)
             and self.value == other.value
@@ -1158,6 +1250,7 @@ class GraphQLEnumValue:
         )
 
     def to_kwargs(self) -> GraphQLEnumValueKwargs:
+        """Get corresponding arguments."""
         return GraphQLEnumValueKwargs(
             value=self.value,
             description=self.description,
@@ -1175,8 +1268,10 @@ GraphQLInputFieldOutType = Callable[[Dict[str, Any]], Any]
 
 
 class GraphQLInputObjectTypeKwargs(GraphQLNamedTypeKwargs, total=False):
+    """Arguments for GraphQL input object types"""
+
     fields: GraphQLInputFieldMap
-    out_type: Optional[GraphQLInputFieldOutType]
+    out_type: GraphQLInputFieldOutType | None
 
 
 class GraphQLInputObjectType(GraphQLNamedType):
@@ -1204,18 +1299,18 @@ class GraphQLInputObjectType(GraphQLNamedType):
     converted to other types by specifying an ``out_type`` function or class.
     """
 
-    ast_node: Optional[InputObjectTypeDefinitionNode]
-    extension_ast_nodes: Tuple[InputObjectTypeExtensionNode, ...]
+    ast_node: InputObjectTypeDefinitionNode | None
+    extension_ast_nodes: tuple[InputObjectTypeExtensionNode, ...]
 
     def __init__(
         self,
         name: str,
         fields: ThunkMapping[GraphQLInputField],
-        description: Optional[str] = None,
-        out_type: Optional[GraphQLInputFieldOutType] = None,
-        extensions: Optional[Dict[str, Any]] = None,
-        ast_node: Optional[InputObjectTypeDefinitionNode] = None,
-        extension_ast_nodes: Optional[Collection[InputObjectTypeExtensionNode]] = None,
+        description: str | None = None,
+        out_type: GraphQLInputFieldOutType | None = None,
+        extensions: dict[str, Any] | None = None,
+        ast_node: InputObjectTypeDefinitionNode | None = None,
+        extension_ast_nodes: Collection[InputObjectTypeExtensionNode] | None = None,
     ) -> None:
         super().__init__(
             name=name,
@@ -1229,7 +1324,7 @@ class GraphQLInputObjectType(GraphQLNamedType):
             self.out_type = out_type  # type: ignore
 
     @staticmethod
-    def out_type(value: Dict[str, Any]) -> Any:
+    def out_type(value: dict[str, Any]) -> Any:
         """Transform outbound values (this is an extension of GraphQL.js).
 
         This default implementation passes values unaltered as dictionaries.
@@ -1237,9 +1332,10 @@ class GraphQLInputObjectType(GraphQLNamedType):
         return value
 
     def to_kwargs(self) -> GraphQLInputObjectTypeKwargs:
+        """Get corresponding arguments."""
         # noinspection PyArgumentList
-        return GraphQLInputObjectTypeKwargs(  # type: ignore
-            super().to_kwargs(),
+        return GraphQLInputObjectTypeKwargs(
+            super().to_kwargs(),  # type: ignore
             fields=self.fields.copy(),
             out_type=None
             if self.out_type is GraphQLInputObjectType.out_type
@@ -1256,7 +1352,8 @@ class GraphQLInputObjectType(GraphQLNamedType):
             fields = resolve_thunk(self._fields)
         except Exception as error:
             cls = GraphQLError if isinstance(error, GraphQLError) else TypeError
-            raise cls(f"{self.name} fields cannot be resolved. {error}") from error
+            msg = f"{self.name} fields cannot be resolved. {error}"
+            raise cls(msg) from error
         return {
             assert_name(name): value
             if isinstance(value, GraphQLInputField)
@@ -1266,23 +1363,28 @@ class GraphQLInputObjectType(GraphQLNamedType):
 
 
 def is_input_object_type(type_: Any) -> TypeGuard[GraphQLInputObjectType]:
+    """Check whether this is a GraphQL input type."""
     return isinstance(type_, GraphQLInputObjectType)
 
 
 def assert_input_object_type(type_: Any) -> GraphQLInputObjectType:
+    """Assert that this is a GraphQL input type."""
     if not is_input_object_type(type_):
-        raise TypeError(f"Expected {type_} to be a GraphQL Input Object type.")
+        msg = f"Expected {type_} to be a GraphQL Input Object type."
+        raise TypeError(msg)
     return type_
 
 
 class GraphQLInputFieldKwargs(TypedDict, total=False):
+    """Arguments for GraphQL input fields"""
+
     type_: GraphQLInputType
     default_value: Any
-    description: Optional[str]
-    deprecation_reason: Optional[str]
-    out_name: Optional[str]
-    extensions: Dict[str, Any]
-    ast_node: Optional[InputValueDefinitionNode]
+    description: str | None
+    deprecation_reason: str | None
+    out_name: str | None
+    extensions: dict[str, Any]
+    ast_node: InputValueDefinitionNode | None
 
 
 class GraphQLInputField:
@@ -1290,21 +1392,21 @@ class GraphQLInputField:
 
     type: GraphQLInputType
     default_value: Any
-    description: Optional[str]
-    deprecation_reason: Optional[str]
-    out_name: Optional[str]  # for transforming names (extension of GraphQL.js)
-    extensions: Dict[str, Any]
-    ast_node: Optional[InputValueDefinitionNode]
+    description: str | None
+    deprecation_reason: str | None
+    out_name: str | None  # for transforming names (extension of GraphQL.js)
+    extensions: dict[str, Any]
+    ast_node: InputValueDefinitionNode | None
 
     def __init__(
         self,
         type_: GraphQLInputType,
         default_value: Any = Undefined,
-        description: Optional[str] = None,
-        deprecation_reason: Optional[str] = None,
-        out_name: Optional[str] = None,
-        extensions: Optional[Dict[str, Any]] = None,
-        ast_node: Optional[InputValueDefinitionNode] = None,
+        description: str | None = None,
+        deprecation_reason: str | None = None,
+        out_name: str | None = None,
+        extensions: dict[str, Any] | None = None,
+        ast_node: InputValueDefinitionNode | None = None,
     ) -> None:
         self.type = type_
         self.default_value = default_value
@@ -1314,7 +1416,7 @@ class GraphQLInputField:
         self.extensions = extensions or {}
         self.ast_node = ast_node
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         return self is other or (
             isinstance(other, GraphQLInputField)
             and self.type == other.type
@@ -1326,6 +1428,7 @@ class GraphQLInputField:
         )
 
     def to_kwargs(self) -> GraphQLInputFieldKwargs:
+        """Get corresponding arguments."""
         return GraphQLInputFieldKwargs(
             type_=self.type,
             default_value=self.default_value,
@@ -1341,13 +1444,14 @@ class GraphQLInputField:
 
 
 def is_required_input_field(field: GraphQLInputField) -> bool:
+    """Check whether this is input field is required."""
     return is_non_null_type(field.type) and field.default_value is Undefined
 
 
 # Wrapper types
 
 
-class GraphQLList(GraphQLWrappingType[GT]):
+class GraphQLList(GraphQLWrappingType[GT_co]):
     """List Type Wrapper
 
     A list is a wrapping type which points to another type. Lists are often created
@@ -1366,7 +1470,7 @@ class GraphQLList(GraphQLWrappingType[GT]):
                 }
     """
 
-    def __init__(self, type_: GT) -> None:
+    def __init__(self, type_: GT_co) -> None:
         super().__init__(type_=type_)
 
     def __str__(self) -> str:
@@ -1374,19 +1478,22 @@ class GraphQLList(GraphQLWrappingType[GT]):
 
 
 def is_list_type(type_: Any) -> TypeGuard[GraphQLList]:
+    """Check whether this is a GraphQL list type."""
     return isinstance(type_, GraphQLList)
 
 
 def assert_list_type(type_: Any) -> GraphQLList:
+    """Assert that this is a GraphQL list type."""
     if not is_list_type(type_):
-        raise TypeError(f"Expected {type_} to be a GraphQL List type.")
+        msg = f"Expected {type_} to be a GraphQL List type."
+        raise TypeError(msg)
     return type_
 
 
-GNT = TypeVar("GNT", bound="GraphQLNullableType", covariant=True)
+GNT_co = TypeVar("GNT_co", bound="GraphQLNullableType", covariant=True)
 
 
-class GraphQLNonNull(GraphQLWrappingType[GNT]):
+class GraphQLNonNull(GraphQLWrappingType[GNT_co]):
     """Non-Null Type Wrapper
 
     A non-null is a wrapping type which points to another type. Non-null types enforce
@@ -1406,7 +1513,7 @@ class GraphQLNonNull(GraphQLWrappingType[GNT]):
     Note: the enforcement of non-nullability occurs within the executor.
     """
 
-    def __init__(self, type_: GNT):
+    def __init__(self, type_: GNT_co) -> None:
         super().__init__(type_=type_)
 
     def __str__(self) -> str:
@@ -1425,7 +1532,6 @@ GraphQLNullableType: TypeAlias = Union[
     GraphQLList,
 ]
 
-
 # These types may be used as input types for arguments and directives.
 
 GraphQLNullableInputType: TypeAlias = Union[
@@ -1439,7 +1545,6 @@ GraphQLNullableInputType: TypeAlias = Union[
 GraphQLInputType: TypeAlias = Union[
     GraphQLNullableInputType, GraphQLNonNull[GraphQLNullableInputType]
 ]
-
 
 # These types may be used as output types as the result of fields.
 
@@ -1462,18 +1567,22 @@ GraphQLOutputType: TypeAlias = Union[
 
 
 def is_input_type(type_: Any) -> TypeGuard[GraphQLInputType]:
+    """Check whether this is a GraphQL input type."""
     return isinstance(
         type_, (GraphQLScalarType, GraphQLEnumType, GraphQLInputObjectType)
     ) or (isinstance(type_, GraphQLWrappingType) and is_input_type(type_.of_type))
 
 
 def assert_input_type(type_: Any) -> GraphQLInputType:
+    """Assert that this is a GraphQL input type."""
     if not is_input_type(type_):
-        raise TypeError(f"Expected {type_} to be a GraphQL input type.")
+        msg = f"Expected {type_} to be a GraphQL input type."
+        raise TypeError(msg)
     return type_
 
 
 def is_output_type(type_: Any) -> TypeGuard[GraphQLOutputType]:
+    """Check whether this is a GraphQL output type."""
     return isinstance(
         type_,
         (
@@ -1487,22 +1596,28 @@ def is_output_type(type_: Any) -> TypeGuard[GraphQLOutputType]:
 
 
 def assert_output_type(type_: Any) -> GraphQLOutputType:
+    """Assert that this is a GraphQL output type."""
     if not is_output_type(type_):
-        raise TypeError(f"Expected {type_} to be a GraphQL output type.")
+        msg = f"Expected {type_} to be a GraphQL output type."
+        raise TypeError(msg)
     return type_
 
 
 def is_non_null_type(type_: Any) -> TypeGuard[GraphQLNonNull]:
+    """Check whether this is a non-null GraphQL type."""
     return isinstance(type_, GraphQLNonNull)
 
 
 def assert_non_null_type(type_: Any) -> GraphQLNonNull:
+    """Assert that this is a non-null GraphQL type."""
     if not is_non_null_type(type_):
-        raise TypeError(f"Expected {type_} to be a GraphQL Non-Null type.")
+        msg = f"Expected {type_} to be a GraphQL Non-Null type."
+        raise TypeError(msg)
     return type_
 
 
 def is_nullable_type(type_: Any) -> TypeGuard[GraphQLNullableType]:
+    """Check whether this is a nullable GraphQL type."""
     return isinstance(
         type_,
         (
@@ -1518,29 +1633,28 @@ def is_nullable_type(type_: Any) -> TypeGuard[GraphQLNullableType]:
 
 
 def assert_nullable_type(type_: Any) -> GraphQLNullableType:
+    """Assert that this is a nullable GraphQL type."""
     if not is_nullable_type(type_):
-        raise TypeError(f"Expected {type_} to be a GraphQL nullable type.")
+        msg = f"Expected {type_} to be a GraphQL nullable type."
+        raise TypeError(msg)
     return type_
 
 
 @overload
-def get_nullable_type(type_: None) -> None:
-    ...
+def get_nullable_type(type_: None) -> None: ...
 
 
 @overload
-def get_nullable_type(type_: GraphQLNullableType) -> GraphQLNullableType:
-    ...
+def get_nullable_type(type_: GraphQLNullableType) -> GraphQLNullableType: ...
 
 
 @overload
-def get_nullable_type(type_: GraphQLNonNull) -> GraphQLNullableType:
-    ...
+def get_nullable_type(type_: GraphQLNonNull) -> GraphQLNullableType: ...
 
 
 def get_nullable_type(
-    type_: Optional[Union[GraphQLNullableType, GraphQLNonNull]]
-) -> Optional[GraphQLNullableType]:
+    type_: GraphQLNullableType | GraphQLNonNull | None,
+) -> GraphQLNullableType | None:
     """Unwrap possible non-null type"""
     if is_non_null_type(type_):
         type_ = type_.of_type
@@ -1563,26 +1677,27 @@ GraphQLNamedOutputType: TypeAlias = Union[
 
 
 def is_named_type(type_: Any) -> TypeGuard[GraphQLNamedType]:
+    """Check whether this is a named GraphQL type."""
     return isinstance(type_, GraphQLNamedType)
 
 
 def assert_named_type(type_: Any) -> GraphQLNamedType:
+    """Assert that this is a named GraphQL type."""
     if not is_named_type(type_):
-        raise TypeError(f"Expected {type_} to be a GraphQL named type.")
+        msg = f"Expected {type_} to be a GraphQL named type."
+        raise TypeError(msg)
     return type_
 
 
 @overload
-def get_named_type(type_: None) -> None:
-    ...
+def get_named_type(type_: None) -> None: ...
 
 
 @overload
-def get_named_type(type_: GraphQLType) -> GraphQLNamedType:
-    ...
+def get_named_type(type_: GraphQLType) -> GraphQLNamedType: ...
 
 
-def get_named_type(type_: Optional[GraphQLType]) -> Optional[GraphQLNamedType]:
+def get_named_type(type_: GraphQLType | None) -> GraphQLNamedType | None:
     """Unwrap possible wrapping type"""
     if type_:
         unwrapped_type = type_
@@ -1598,12 +1713,15 @@ GraphQLLeafType: TypeAlias = Union[GraphQLScalarType, GraphQLEnumType]
 
 
 def is_leaf_type(type_: Any) -> TypeGuard[GraphQLLeafType]:
+    """Check whether this is a GraphQL leaf type."""
     return isinstance(type_, (GraphQLScalarType, GraphQLEnumType))
 
 
 def assert_leaf_type(type_: Any) -> GraphQLLeafType:
+    """Assert that this is a GraphQL leaf type."""
     if not is_leaf_type(type_):
-        raise TypeError(f"Expected {type_} to be a GraphQL leaf type.")
+        msg = f"Expected {type_} to be a GraphQL leaf type."
+        raise TypeError(msg)
     return type_
 
 
@@ -1615,14 +1733,17 @@ GraphQLCompositeType: TypeAlias = Union[
 
 
 def is_composite_type(type_: Any) -> TypeGuard[GraphQLCompositeType]:
+    """Check whether this is a GraphQL composite type."""
     return isinstance(
         type_, (GraphQLObjectType, GraphQLInterfaceType, GraphQLUnionType)
     )
 
 
-def assert_composite_type(type_: Any) -> GraphQLType:
+def assert_composite_type(type_: Any) -> GraphQLCompositeType:
+    """Assert that this is a GraphQL composite type."""
     if not is_composite_type(type_):
-        raise TypeError(f"Expected {type_} to be a GraphQL composite type.")
+        msg = f"Expected {type_} to be a GraphQL composite type."
+        raise TypeError(msg)
     return type_
 
 
@@ -1632,10 +1753,13 @@ GraphQLAbstractType: TypeAlias = Union[GraphQLInterfaceType, GraphQLUnionType]
 
 
 def is_abstract_type(type_: Any) -> TypeGuard[GraphQLAbstractType]:
+    """Check whether this is a GraphQL abstract type."""
     return isinstance(type_, (GraphQLInterfaceType, GraphQLUnionType))
 
 
 def assert_abstract_type(type_: Any) -> GraphQLAbstractType:
+    """Assert that this is a GraphQL abstract type."""
     if not is_abstract_type(type_):
-        raise TypeError(f"Expected {type_} to be a GraphQL composite type.")
+        msg = f"Expected {type_} to be a GraphQL composite type."
+        raise TypeError(msg)
     return type_

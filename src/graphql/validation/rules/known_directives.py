@@ -1,4 +1,8 @@
-from typing import Any, Dict, List, Optional, Tuple, Union, cast
+"""Known directives rule"""
+
+from __future__ import annotations
+
+from typing import Any, List, cast
 
 from ...error import GraphQLError
 from ...language import (
@@ -10,7 +14,6 @@ from ...language import (
 )
 from ...type import specified_directives
 from . import ASTValidationRule, SDLValidationContext, ValidationContext
-
 
 __all__ = ["KnownDirectivesRule"]
 
@@ -24,11 +27,11 @@ class KnownDirectivesRule(ASTValidationRule):
     See https://spec.graphql.org/draft/#sec-Directives-Are-Defined
     """
 
-    context: Union[ValidationContext, SDLValidationContext]
+    context: ValidationContext | SDLValidationContext
 
-    def __init__(self, context: Union[ValidationContext, SDLValidationContext]):
+    def __init__(self, context: ValidationContext | SDLValidationContext) -> None:
         super().__init__(context)
-        locations_map: Dict[str, Tuple[DirectiveLocation, ...]] = {}
+        locations_map: dict[str, tuple[DirectiveLocation, ...]] = {}
 
         schema = context.schema
         defined_directives = (
@@ -50,7 +53,7 @@ class KnownDirectivesRule(ASTValidationRule):
         _key: Any,
         _parent: Any,
         _path: Any,
-        ancestors: List[Node],
+        ancestors: list[Node],
     ) -> None:
         name = node.name.value
         locations = self.locations_map.get(name)
@@ -100,21 +103,21 @@ _directive_location = {
 
 
 def get_directive_location_for_ast_path(
-    ancestors: List[Node],
-) -> Optional[DirectiveLocation]:
+    ancestors: list[Node],
+) -> DirectiveLocation | None:
     applied_to = ancestors[-1]
     if not isinstance(applied_to, Node):  # pragma: no cover
-        raise TypeError("Unexpected error in directive.")
+        msg = "Unexpected error in directive."
+        raise TypeError(msg)
     kind = applied_to.kind
     if kind == "operation_definition":
         applied_to = cast(OperationDefinitionNode, applied_to)
         return _operation_location[applied_to.operation.value]
-    elif kind == "input_value_definition":
+    if kind == "input_value_definition":
         parent_node = ancestors[-3]
         return (
             DirectiveLocation.INPUT_FIELD_DEFINITION
             if parent_node.kind == "input_object_type_definition"
             else DirectiveLocation.ARGUMENT_DEFINITION
         )
-    else:
-        return _directive_location.get(kind)
+    return _directive_location.get(kind)

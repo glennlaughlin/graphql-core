@@ -1,4 +1,6 @@
-from typing import List, Union, cast
+from __future__ import annotations
+
+from typing import cast
 
 from graphql.error import GraphQLError
 from graphql.language import (
@@ -10,7 +12,6 @@ from graphql.language import (
 )
 
 from ..utils import dedent
-
 
 source = Source(
     dedent(
@@ -25,7 +26,8 @@ source = Source(
 ast = parse(source)
 operation_node = ast.definitions[0]
 operation_node = cast(OperationDefinitionNode, operation_node)
-assert operation_node and operation_node.kind == "operation_definition"
+assert operation_node
+assert operation_node.kind == "operation_definition"
 field_node = operation_node.selection_set.selections[0]
 assert field_node
 
@@ -204,7 +206,7 @@ def describe_graphql_error():
         }
 
     def serializes_to_include_path():
-        path: List[Union[int, str]] = ["path", 3, "to", "field"]
+        path: list[int | str] = ["path", 3, "to", "field"]
         e = GraphQLError("msg", path=path)
         assert e.path is path
         assert repr(e) == "GraphQLError('msg', path=['path', 3, 'to', 'field'])"
@@ -218,7 +220,7 @@ def describe_graphql_error():
         assert str(e_short) == "msg"
         assert repr(e_short) == "GraphQLError('msg')"
 
-        path: List[Union[str, int]] = ["path", 2, "field"]
+        path: list[str | int] = ["path", 2, "field"]
         extensions = {"foo": "bar "}
         e_full = GraphQLError("msg", field_node, None, None, path, None, extensions)
         assert str(e_full) == (
@@ -240,25 +242,26 @@ def describe_graphql_error():
         assert repr(e) == "GraphQLError('msg', extensions={'foo': 'bar'})"
 
     def always_stores_path_as_list():
-        path: List[Union[int, str]] = ["path", 3, "to", "field"]
+        path: list[int | str] = ["path", 3, "to", "field"]
         e = GraphQLError("msg,", path=tuple(path))
         assert isinstance(e.path, list)
         assert e.path == path
 
     def is_comparable():
         e1 = GraphQLError("msg,", path=["field", 1])
-        assert e1 == e1
+        assert e1 == e1  # noqa: PLR0124
         assert e1 == e1.formatted
-        assert not e1 != e1
-        assert not e1 != e1.formatted
+        assert e1 == e1  # noqa: PLR0124
+        assert e1 == e1.formatted
         e2 = GraphQLError("msg,", path=["field", 1])
         assert e1 == e2
-        assert not e1 != e2
-        assert e2.path and e2.path[1] == 1
+        assert e1 == e2
+        assert e2.path
+        assert e2.path[1] == 1
         e2.path[1] = 2
-        assert not e1 == e2
         assert e1 != e2
-        assert not e1 == e2.formatted
+        assert e1 != e2
+        assert e1 != e2.formatted
         assert e1 != e2.formatted
 
     def is_hashable():
@@ -297,7 +300,9 @@ def describe_to_string():
         )
         op_a = doc_a.definitions[0]
         op_a = cast(ObjectTypeDefinitionNode, op_a)
-        assert op_a and op_a.kind == "object_type_definition" and op_a.fields
+        assert op_a
+        assert op_a.kind == "object_type_definition"
+        assert op_a.fields
         field_a = op_a.fields[0]
         doc_b = parse(
             Source(
@@ -313,7 +318,9 @@ def describe_to_string():
         )
         op_b = doc_b.definitions[0]
         op_b = cast(ObjectTypeDefinitionNode, op_b)
-        assert op_b and op_b.kind == "object_type_definition" and op_b.fields
+        assert op_b
+        assert op_b.kind == "object_type_definition"
+        assert op_b.fields
         field_b = op_b.fields[0]
 
         error = GraphQLError(
@@ -341,7 +348,7 @@ def describe_to_string():
 
 def describe_formatted():
     def formats_graphql_error():
-        path: List[Union[int, str]] = ["one", 2]
+        path: list[int | str] = ["one", 2]
         extensions = {"ext": None}
         error = GraphQLError(
             "test message",
@@ -374,7 +381,7 @@ def describe_formatted():
         }
 
     def includes_path():
-        path: List[Union[int, str]] = ["path", 3, "to", "field"]
+        path: list[int | str] = ["path", 3, "to", "field"]
         error = GraphQLError("msg", path=path)
         assert error.formatted == {"message": "msg", "path": path}
 
@@ -386,14 +393,14 @@ def describe_formatted():
         }
 
     def can_be_created_from_dict():
-        args = dict(
-            nodes=[operation_node],
-            source=source,
-            positions=[6],
-            path=["path", 2, "a"],
-            original_error=Exception("I like turtles"),
-            extensions=dict(hee="I like turtles"),
-        )
+        args = {
+            "nodes": [operation_node],
+            "source": source,
+            "positions": [6],
+            "path": ["path", 2, "a"],
+            "original_error": Exception("I like turtles"),
+            "extensions": {"hee": "I like turtles"},
+        }
         error = GraphQLError("msg", **args)  # type: ignore
         assert error.formatted == {
             "message": "msg",

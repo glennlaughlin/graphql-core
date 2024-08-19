@@ -1,12 +1,17 @@
-from typing import List, NamedTuple, Optional
+"""GraphQL Lexer"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, NamedTuple
 
 from ..error import GraphQLSyntaxError
 from .ast import Token
 from .block_string import dedent_block_string_lines
 from .character_classes import is_digit, is_name_continue, is_name_start
-from .source import Source
 from .token_kind import TokenKind
 
+if TYPE_CHECKING:
+    from .source import Source
 
 __all__ = ["Lexer", "is_punctuator_token_kind"]
 
@@ -27,7 +32,7 @@ class Lexer:
     EOF token whenever called.
     """
 
-    def __init__(self, source: Source):
+    def __init__(self, source: Source) -> None:
         """Given a Source object, initialize a Lexer for that source."""
         self.source = source
         self.token = self.last_token = Token(TokenKind.SOF, 0, 0, 0, 0)
@@ -70,7 +75,7 @@ class Lexer:
             return TokenKind.EOF.value
         char = body[location]
         # Printable ASCII
-        if "\x20" <= char <= "\x7E":
+        if "\x20" <= char <= "\x7e":
             return "'\"'" if char == '"' else f"'{char}'"
         # Unicode code point
         point = ord(
@@ -83,7 +88,7 @@ class Lexer:
         return f"U+{point:04X}"
 
     def create_token(
-        self, kind: TokenKind, start: int, end: int, value: Optional[str] = None
+        self, kind: TokenKind, start: int, end: int, value: str | None = None
     ) -> Token:
         """Create a token with line and column location information."""
         line = self.line
@@ -107,12 +112,12 @@ class Lexer:
             if char in " \t,\ufeff":
                 position += 1
                 continue
-            elif char == "\n":
+            if char == "\n":
                 position += 1
                 self.line += 1
                 self.line_start = position
                 continue
-            elif char == "\r":
+            if char == "\r":
                 if body[position + 1 : position + 2] == "\n":
                     position += 2
                 else:
@@ -139,9 +144,8 @@ class Lexer:
             if is_name_start(char):
                 return self.read_name(position)
 
-            if char == ".":
-                if body[position + 1 : position + 3] == "..":
-                    return self.create_token(TokenKind.SPREAD, position, position + 3)
+            if char == "." and body[position + 1 : position + 3] == "..":
+                return self.create_token(TokenKind.SPREAD, position, position + 3)
 
             message = (
                 "Unexpected single quote character ('),"
@@ -265,7 +269,7 @@ class Lexer:
         body_length = len(body)
         position = start + 1
         chunk_start = position
-        value: List[str] = []
+        value: list[str] = []
         append = value.append
 
         while position < body_length:
@@ -314,6 +318,7 @@ class Lexer:
         raise GraphQLSyntaxError(self.source, position, "Unterminated string.")
 
     def read_escaped_unicode_variable_width(self, position: int) -> EscapeSequence:
+        """Read escaped unicode with variable width"""
         body = self.source.body
         point = 0
         size = 3
@@ -341,6 +346,7 @@ class Lexer:
         )
 
     def read_escaped_unicode_fixed_width(self, position: int) -> EscapeSequence:
+        """Read escaped unicode with fixed width"""
         body = self.source.body
         code = read_16_bit_hex_code(body, position + 2)
 
@@ -349,16 +355,15 @@ class Lexer:
 
         # GraphQL allows JSON-style surrogate pair escape sequences, but only when
         # a valid pair is formed.
-        if 0xD800 <= code <= 0xDBFF:
-            if body[position + 6 : position + 8] == "\\u":
-                trailing_code = read_16_bit_hex_code(body, position + 8)
-                if 0xDC00 <= trailing_code <= 0xDFFF:
-                    return EscapeSequence(
-                        (chr(code) + chr(trailing_code))
-                        .encode("utf-16", "surrogatepass")
-                        .decode("utf-16"),
-                        12,
-                    )
+        if 0xD800 <= code <= 0xDBFF and body[position + 6 : position + 8] == "\\u":
+            trailing_code = read_16_bit_hex_code(body, position + 8)
+            if 0xDC00 <= trailing_code <= 0xDFFF:
+                return EscapeSequence(
+                    (chr(code) + chr(trailing_code))
+                    .encode("utf-16", "surrogatepass")
+                    .decode("utf-16"),
+                    12,
+                )
 
         raise GraphQLSyntaxError(
             self.source,
@@ -367,6 +372,7 @@ class Lexer:
         )
 
     def read_escaped_character(self, position: int) -> EscapeSequence:
+        """Read escaped character sequence"""
         body = self.source.body
         value = _ESCAPED_CHARS.get(body[position + 1])
         if value:
@@ -544,9 +550,9 @@ def read_hex_digit(char: str) -> int:
     """
     if "0" <= char <= "9":
         return ord(char) - 48
-    elif "A" <= char <= "F":
+    if "A" <= char <= "F":
         return ord(char) - 55
-    elif "a" <= char <= "f":
+    if "a" <= char <= "f":
         return ord(char) - 87
     return -1
 
@@ -562,8 +568,7 @@ def is_unicode_scalar_value(char: str) -> bool:
 
 
 def is_supplementary_code_point(body: str, location: int) -> bool:
-    """
-    Check whether the current location is a supplementary code point.
+    """Check whether the current location is a supplementary code point.
 
     The GraphQL specification defines source text as a sequence of unicode scalar
     values (which Unicode defines to exclude surrogate code points).

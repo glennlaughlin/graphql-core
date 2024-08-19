@@ -2,8 +2,7 @@ import asyncio
 from inspect import isawaitable
 from sys import version_info as python_version
 
-from pytest import mark
-
+import pytest
 from graphql.pyutils import is_awaitable
 
 
@@ -61,49 +60,59 @@ def describe_is_awaitable():
         assert not is_awaitable(some_generator())
 
     def declines_a_coroutine_function():
-        async def some_coroutine():
+        async def some_async_function():
             return True  # pragma: no cover
 
-        assert not isawaitable(some_coroutine)
-        assert not is_awaitable(some_coroutine)
+        assert not isawaitable(some_async_function)
+        assert not is_awaitable(some_async_function)
 
-    @mark.asyncio
-    @mark.filterwarnings("ignore:.* was never awaited:RuntimeWarning")
+    @pytest.mark.asyncio()
     async def recognizes_a_coroutine_object():
-        async def some_coroutine():
-            return False  # pragma: no cover
+        async def some_async_function():
+            return True
 
-        assert isawaitable(some_coroutine())
-        assert is_awaitable(some_coroutine())
+        some_coroutine = some_async_function()
 
-    @mark.filterwarnings("ignore::Warning")  # Deprecation and Runtime warnings
-    @mark.skipif(
+        assert isawaitable(some_coroutine)
+        assert is_awaitable(some_coroutine)
+
+        assert await some_coroutine is True
+
+    @pytest.mark.filterwarnings("ignore::Warning")  # Deprecation and Runtime warnings
+    @pytest.mark.skipif(
         python_version >= (3, 11),
         reason="Generator-based coroutines not supported any more since Python 3.11",
     )
-    def recognizes_an_old_style_coroutine():  # pragma: no cover
-        @asyncio.coroutine
-        def some_old_style_coroutine():
-            yield False  # pragma: no cover
+    async def recognizes_an_old_style_coroutine():  # pragma: no cover
+        @asyncio.coroutine  # type: ignore
+        def some_function():
+            yield True
 
-        assert is_awaitable(some_old_style_coroutine())
-        assert is_awaitable(some_old_style_coroutine())
+        some_old_style_coroutine = some_function()
+        assert is_awaitable(some_old_style_coroutine)
+        assert is_awaitable(some_old_style_coroutine)
 
-    @mark.asyncio
-    @mark.filterwarnings("ignore:.* was never awaited:RuntimeWarning")
+    @pytest.mark.asyncio()
     async def recognizes_a_future_object():
-        async def some_coroutine():
-            return False  # pragma: no cover
+        async def some_async_function():
+            return True
 
-        some_future = asyncio.ensure_future(some_coroutine())
+        some_coroutine = some_async_function()
+        some_future = asyncio.ensure_future(some_coroutine)
 
         assert is_awaitable(some_future)
         assert is_awaitable(some_future)
 
-    @mark.filterwarnings("ignore:.* was never awaited:RuntimeWarning")
-    def declines_an_async_generator():
-        async def some_async_generator():
-            yield True  # pragma: no cover
+        assert await some_future is True
 
-        assert not isawaitable(some_async_generator())
-        assert not is_awaitable(some_async_generator())
+    @pytest.mark.asyncio()
+    async def declines_an_async_generator():
+        async def some_async_generator_function():
+            yield True
+
+        some_async_generator = some_async_generator_function()
+
+        assert not isawaitable(some_async_generator)
+        assert not is_awaitable(some_async_generator)
+
+        assert await some_async_generator.__anext__() is True

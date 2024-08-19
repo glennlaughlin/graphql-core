@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "graphql-core"
-version = "3.3.0a2"
-description = """
+version = "3.3.0a6"
+description = """\
 GraphQL-core is a Python port of GraphQL.js,\
  the JavaScript reference implementation for GraphQL."""
 license = "MIT"
@@ -20,7 +20,8 @@ classifiers = [
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11"
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
 ]
 packages = [
     { include = "graphql", from = "src" },
@@ -28,13 +29,13 @@ packages = [
     { include = "docs", format = "sdist" },
     { include = ".bumpversion.cfg", format = "sdist" },
     { include = ".editorconfig", format = "sdist" },
-    { include = ".flake8", format = "sdist" },
     { include = ".readthedocs.yaml", format = "sdist" },
     { include = "poetry.lock", format = "sdist" },
     { include = "tox.ini", format = "sdist" },
     { include = "CODEOWNERS", format = "sdist" },
     { include = "SECURITY.md", format = "sdist" }
 ]
+exclude = ["docs/_build/**"]
 
 [tool.poetry.urls]
 Changelog = "https://github.com/graphql-python/graphql-core/releases"
@@ -42,40 +43,43 @@ Changelog = "https://github.com/graphql-python/graphql-core/releases"
 [tool.poetry.dependencies]
 python = "^3.7"
 typing-extensions = [
-    { version = "^4.5", python = "<3.10" }
+    { version = "^4.12", python = ">=3.8,<3.10" },
+    { version = "^4.7.1", python = "<3.8" },
 ]
 
 [tool.poetry.group.test]
 optional = true
 
 [tool.poetry.group.test.dependencies]
-pytest = "^7.3"
-pytest-asyncio = ">=0.21,<1"
+pytest = [
+    { version = "^8.3", python = ">=3.8" },
+    { version = "^7.4", python = "<3.8"}
+]
+pytest-asyncio = [
+    { version = "^0.23.8", python = ">=3.8" },
+    { version = "~0.21.1", python = "<3.8"}
+]
 pytest-benchmark = "^4.0"
-pytest-cov = "^4.0"
-pytest-describe = "^2.1"
-pytest-timeout = "^2.1"
+pytest-cov = [
+    { version = "^5.0", python = ">=3.8" },
+    { version = "^4.1", python = "<3.8" },
+]
+pytest-describe = "^2.2"
+pytest-timeout = "^2.3"
 tox = [
-    { version = ">=4.4,<5", python = ">=3.8" },
-    { version = ">=3.28,<4", python = "<3.8" }
+    { version = "^4.16", python = ">=3.8" },
+    { version = "^3.28", python = "<3.8" }
 ]
 
 [tool.poetry.group.lint]
 optional = true
 
 [tool.poetry.group.lint.dependencies]
-black = "23.3.0"
-flake8 = [
-    { version = ">=5,<7", python = ">=3.8" },
-    { version = ">=5,<6", python = "<3.8" }
+ruff = ">=0.5.7,<0.6"
+mypy = [
+    { version = "^1.11", python = ">=3.8" },
+    { version = "~1.4", python = "<3.8" }
 ]
-flake8-bandit = "^4.1"
-flake8-bugbear = "23.2.13"
-isort = [
-    { version = "^5.12", python = ">=3.8" },
-    { version = "^5.11", python = "<3.8" }
-]
-mypy = "1.2.0"
 bump2version = ">=1.0,<2"
 
 [tool.poetry.group.doc]
@@ -83,16 +87,151 @@ optional = true
 
 [tool.poetry.group.doc.dependencies]
 sphinx = [
-    { version = ">=4,<7", python = ">=3.8" },
+    { version = ">=7,<8", python = ">=3.8" },
     { version = ">=4,<6", python = "<3.8" }
 ]
-sphinx_rtd_theme = ">=1,<2"
+sphinx_rtd_theme = "^2.0"
 
-[tool.bandit]
-exclude_dirs = ["tests"]
+[tool.ruff]
+line-length = 88
+target-version = "py37"
 
-[tool.black]
-target-version = ["py37", "py38", "py39", "py310", "py311"]
+[tool.ruff.lint]
+select = [
+  "A",      # flake8-builtins
+  "ANN",    # flake8-annotations
+  "ARG",    # flake8-unused-arguments
+  "B",      # flake8-bugbear
+  "BLE",    # flake8-blind-except
+  "C4",     # flake8-comprehensions
+  "C90",    # McCabe cyclomatic complexity
+  "COM",    # flake8-commas
+  "D",      # pydocstyle
+  "DTZ",    # flake8-datetimez
+  "E",      # pycodestyle
+  "EM",     # flake8-errmsg
+  "ERA",    # eradicate
+  "EXE",    # flake8-executable
+  "F",      # Pyflakes
+  "FBT",    # flake8-boolean-trap
+  "G",      # flake8-logging-format
+  "I",      # isort
+  "ICN",    # flake8-import-conventions
+  "INP",    # flake8-no-pep420
+  "INT",    # flake8-gettext
+  "ISC",    # flake8-implicit-str-concat
+  "N",      # pep8-naming
+  "PGH",    # pygrep-hooks
+  "PIE",    # flake8-pie
+  "PL",     # Pylint
+  "PT",     # flake8-pytest-style
+  "PTH",    # flake8-use-pathlib
+  "PYI",    # flake8-pyi
+  "Q",      # flake8-quotes
+  "RET",    # flake8-return
+  "RSE",    # flake8-raise
+  "RUF",    # Ruff-specific rules
+  "S",      # flake8-bandit
+  "SLF",    # flake8-self
+  "SIM",    # flake8-simplify
+  "T10",    # flake8-debugger
+  "T20",    # flake8-print
+  "TCH",    # flake8-type-checking
+  "TID",    # flake8-tidy-imports
+  "TRY",    # tryceratops
+  "UP",     # pyupgrade
+  "W",      # pycodestyle
+  "YTT",    # flake8-2020
+]
+ignore = [
+  "ANN101", "ANN102",  # no type annotation for self and cls needed
+  "ANN401",  # allow explicit Any
+  "COM812",  # allow trailing commas for auto-formatting
+  "D105", "D107",  # no docstring needed for magic methods
+  "D203",  # no blank line before class docstring
+  "D213",  # multi-line docstrings should not start at second line
+  "D400", "D415",  # first line in docstring does not need to be a sentence
+  "D401",  # do not always require imperative mood in first line
+  "FBT001", "FBT002", "FBT003",  # allow boolean parameters
+  "ISC001",  # allow string literal concatenation for auto-formatting
+  "PGH003",  # type ignores do not need to be specific
+  "PLR2004",  # allow some "magic" values
+  "PYI034",  # do not check return value of new method
+  "TID252",  # allow relative imports
+  "TRY003",  # allow specific messages outside the exception class
+]
+
+[tool.ruff.lint.per-file-ignores]
+"*/__init__.py" = [
+   "I001",  # imports do not need to be sorted
+]
+"src/graphql/execution/*" = [
+    "BLE001",  # allow catching blind exception
+]
+"src/graphql/language/ast.py" = [
+    "D101",  # do not require docstrings
+]
+"src/graphql/language/parser.py" = [
+    "RSE102",  # raised exception may need to be called
+]
+"src/graphql/type/introspection.py" = [
+    "ANN001", "ANN003", "ANN204", "ANN205",  # allow missing type annotations
+    "N803",  # allow JavaScript style arguments
+]
+"src/graphql/utilities/get_introspection_query.py" = [
+    "D101",  # allow missing class docstrings
+    "N815",  # allow JavaScript style class attributes
+]
+"src/graphql/utilities/type_info.py" = [
+    "D102",  # allow missing method docstrings
+]
+"src/graphql/validation/rules/*" = [
+    "D102",  # allow missing method docstrings
+]
+"src/graphql/validation/validation_context.py" = [
+    "D102",  # allow missing method docstrings
+]
+"tests/*" = [
+    "ANN001", "ANN002", "ANN003",  # allow missing type annotations
+    "ANN201", "ANN202", "ANN204", "ANN205",  # allow missing type annotations
+    "B011",  # allow always failing assertions
+    "B904",  # allow raising exceptions without context
+    "C901",  # allow complex functions
+    "D100", "D101", "D102", "D103",  # allow missing docstrings
+    "EM101", "EM102",  # allow passing literal strings to exceptions
+    "N802", "N803", "N806", "N815", "N816",  # allow JavaScript style names
+    "PLR0915",  # allow many statements
+    "PT015",  # allow always failing assertions
+    "RUF012",  # allow mutable class attributes
+    "S101",  # allow assertions
+    "S301",  # allow pickling
+    "TRY002", "TRY301",  # less strict handling of exceptions
+]
+"tests/star_wars_schema.py" = [
+    "A002",  # allow shadowin builtins
+    "ERA001",  # allow commented-out code
+]
+"tests/test_docs.py" = [
+    "S102",  # allow use of exec
+]
+
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "double"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 50
+
+[tool.ruff.lint.pylint]
+max-args = 15
+max-branches = 50
+max-returns = 25
+max-statements = 125
+
+[tool.ruff.format]
+indent-style = "space"
+quote-style = "double"
+skip-magic-trailing-comma = false
 
 [tool.coverage.run]
 branch = true
@@ -112,26 +251,20 @@ exclude_lines = [
     "pragma: no cover",
     "except ImportError:",
     "# Python <",
+    'sys\.version_info <',
     "raise NotImplementedError",
-    'raise TypeError\(f?"Unexpected',
     "assert False,",
     '\s+next\($',
     "if MYPY:",
     "if TYPE_CHECKING:",
     '^\s+\.\.\.$',
-    '^\s+pass$'
+    '^\s+pass$',
+    ': \.\.\.$'
 ]
 ignore_errors = true
 
-[tool.isort]
-src_paths = ["src", "tests"]
-skip_glob = ["src/**/__init__.py"]
-profile = "black"
-force_single_line = false
-lines_after_imports = 2
-
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 check_untyped_defs = true
 no_implicit_optional = true
 strict_optional = true
@@ -141,15 +274,34 @@ disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
 module = [
-    "graphql.pyutils.frozen_dict",
-    "graphql.pyutils.frozen_list",
     "graphql.type.introspection",
     "tests.*"
 ]
 disallow_untyped_defs = false
 
+[tool.pyright]
+reportIncompatibleVariableOverride = false
+reportMissingTypeArgument = false
+reportUnknownArgumentType = false
+reportUnknownMemberType = false
+reportUnknownParameterType = false
+reportUnnecessaryIsInstance = false
+reportUnknownVariableType = false
+ignore = ["**/test_*"]  # test functions
+
+[tool.pylint.basic]
+max-module-lines = 2000
+
+[tool.pylint.messages_control]
+disable = [
+    "method-hidden",
+    "missing-module-docstring",  # test modules
+    "redefined-outer-name",
+    "unused-variable",  # test functions
+]
+
 [tool.pytest.ini_options]
-minversion = "7.3"
+minversion = "7.4"
 # Only run benchmarks as tests.
 # To actually run the benchmarks, use --benchmark-enable on the command line.
 # To run the slow tests (fuzzing), add --run-slow on the command line.
@@ -164,5 +316,5 @@ timeout = "100"
 filterwarnings = "ignore::pytest.PytestConfigWarning"
 
 [build-system]
-requires = ["poetry_core>=1.4,<2"]
+requires = ["poetry_core>=1.6.1,<2"]
 build-backend = "poetry.core.masonry.api"

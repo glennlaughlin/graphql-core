@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from math import isnan, nan
-from typing import Any, Dict, Optional
+from typing import Any
 
 from graphql.language import ValueNode, parse_value
 from graphql.pyutils import Undefined
@@ -24,7 +26,7 @@ def describe_value_from_ast():
     def _value_from(
         value_text: str,
         type_: GraphQLInputType,
-        variables: Optional[Dict[str, Any]] = None,
+        variables: dict[str, Any] | None = None,
     ):
         ast = parse_value(value_text)
         return value_from_ast(ast, type_, variables)
@@ -112,15 +114,15 @@ def describe_value_from_ast():
         assert isnan(_value_from("NAN", test_enum))
         assert _value_from("NO_CUSTOM_VALUE", test_enum) is Undefined
 
-    # Boolean!
+    # make a Boolean!
     non_null_bool = GraphQLNonNull(GraphQLBoolean)
-    # [Boolean]
+    # make a [Boolean]
     list_of_bool = GraphQLList(GraphQLBoolean)
-    # [Boolean!]
+    # make a [Boolean!]
     list_of_non_null_bool = GraphQLList(non_null_bool)
-    # [Boolean]!
+    # make a [Boolean]!
     non_null_list_of_bool = GraphQLNonNull(list_of_bool)
-    # [Boolean!]!
+    # make a [Boolean!]!
     non_null_list_of_non_mull_bool = GraphQLNonNull(list_of_non_null_bool)
 
     def coerces_to_null_unless_non_null():

@@ -1,19 +1,23 @@
+"""GraphQL AST creation from Python"""
+
+from __future__ import annotations
+
 import re
 from math import isfinite
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping
 
 from ..language import (
     BooleanValueNode,
+    ConstListValueNode,
+    ConstObjectFieldNode,
+    ConstObjectValueNode,
+    ConstValueNode,
     EnumValueNode,
     FloatValueNode,
     IntValueNode,
-    ListValueNode,
     NameNode,
     NullValueNode,
-    ObjectFieldNode,
-    ObjectValueNode,
     StringValueNode,
-    ValueNode,
 )
 from ..pyutils import Undefined, inspect, is_iterable
 from ..type import (
@@ -26,13 +30,12 @@ from ..type import (
     is_non_null_type,
 )
 
-
 __all__ = ["ast_from_value"]
 
 _re_integer_string = re.compile("^-?(?:0|[1-9][0-9]*)$")
 
 
-def ast_from_value(value: Any, type_: GraphQLInputType) -> Optional[ValueNode]:
+def ast_from_value(value: Any, type_: GraphQLInputType) -> ConstValueNode | None:
     """Produce a GraphQL Value AST given a Python object.
 
     This function will match Python/JSON values to GraphQL AST schema format by using
@@ -77,7 +80,7 @@ def ast_from_value(value: Any, type_: GraphQLInputType) -> Optional[ValueNode]:
         if is_iterable(value):
             maybe_value_nodes = (ast_from_value(item, item_type) for item in value)
             value_nodes = tuple(node for node in maybe_value_nodes if node)
-            return ListValueNode(values=value_nodes)
+            return ConstListValueNode(values=value_nodes)
         return ast_from_value(value, item_type)
 
     # Populate the fields of the input object by creating ASTs from each value in the
@@ -91,11 +94,11 @@ def ast_from_value(value: Any, type_: GraphQLInputType) -> Optional[ValueNode]:
             if field_name in value
         )
         field_nodes = tuple(
-            ObjectFieldNode(name=NameNode(value=field_name), value=field_value)
+            ConstObjectFieldNode(name=NameNode(value=field_name), value=field_value)
             for field_name, field_value in field_items
             if field_value
         )
-        return ObjectValueNode(fields=field_nodes)
+        return ConstObjectValueNode(fields=field_nodes)
 
     if is_leaf_type(type_):
         # Since value is an internally represented value, it must be serialized to an
@@ -128,7 +131,9 @@ def ast_from_value(value: Any, type_: GraphQLInputType) -> Optional[ValueNode]:
 
             return StringValueNode(value=serialized)
 
-        raise TypeError(f"Cannot convert value to AST: {inspect(serialized)}.")
+        msg = f"Cannot convert value to AST: {inspect(serialized)}."
+        raise TypeError(msg)
 
     # Not reachable. All possible input types have been considered.
-    raise TypeError(f"Unexpected input type: {inspect(type_)}.")
+    msg = f"Unexpected input type: {inspect(type_)}."  # pragma: no cover
+    raise TypeError(msg)  # pragma: no cover

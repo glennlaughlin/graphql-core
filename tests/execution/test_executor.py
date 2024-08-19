@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 import asyncio
-from typing import Any, Awaitable, Optional, cast
+from typing import Any, Awaitable, cast
 
-from pytest import mark
-
+import pytest
 from graphql.error import GraphQLError
 from graphql.execution import execute, execute_sync
 from graphql.language import FieldNode, OperationDefinitionNode, parse
@@ -10,6 +11,7 @@ from graphql.pyutils import Undefined, inspect
 from graphql.type import (
     GraphQLArgument,
     GraphQLBoolean,
+    GraphQLDeferDirective,
     GraphQLField,
     GraphQLInt,
     GraphQLInterfaceType,
@@ -19,6 +21,7 @@ from graphql.type import (
     GraphQLResolveInfo,
     GraphQLScalarType,
     GraphQLSchema,
+    GraphQLStreamDirective,
     GraphQLString,
     GraphQLUnionType,
     ResponsePath,
@@ -30,7 +33,7 @@ def describe_execute_handles_basic_execution_tasks():
         schema = GraphQLSchema(
             GraphQLObjectType(
                 "Type",
-                {"a": GraphQLField(GraphQLString, resolve=lambda obj, *args: obj)},
+                {"a": GraphQLField(GraphQLString, resolve=lambda obj, *_args: obj)},
             )
         )
 
@@ -38,7 +41,7 @@ def describe_execute_handles_basic_execution_tasks():
 
         assert result == ({"a": "rootValue"}, None)
 
-    @mark.asyncio
+    @pytest.mark.asyncio()
     async def executes_arbitrary_code():
         # noinspection PyMethodMayBeStatic,PyMethodMayBeStatic
         class Data:
@@ -242,7 +245,8 @@ def describe_execute_handles_basic_execution_tasks():
 
         assert len(resolved_infos) == 1
         operation = cast(OperationDefinitionNode, document.definitions[0])
-        assert operation and operation.kind == "operation_definition"
+        assert operation
+        assert operation.kind == "operation_definition"
         field = cast(FieldNode, operation.selection_set.selections[0])
 
         assert resolved_infos[0] == GraphQLResolveInfo(
@@ -261,7 +265,7 @@ def describe_execute_handles_basic_execution_tasks():
         )
 
     def it_populates_path_correctly_with_complex_types():
-        path: Optional[ResponsePath] = None
+        path: ResponsePath | None = None
 
         def resolve(_val, info):
             nonlocal path
@@ -304,9 +308,11 @@ def describe_execute_handles_basic_execution_tasks():
         prev, key, typename = path
         assert key == "l2"
         assert typename == "SomeObject"
+        assert prev is not None
         prev, key, typename = prev
         assert key == 0
         assert typename is None
+        assert prev is not None
         prev, key, typename = prev
         assert key == "l1"
         assert typename == "SomeQuery"
@@ -369,7 +375,7 @@ def describe_execute_handles_basic_execution_tasks():
         assert len(resolved_args) == 1
         assert resolved_args[0] == {"numArg": 123, "stringArg": "foo"}
 
-    @mark.asyncio
+    @pytest.mark.asyncio()
     async def nulls_out_error_subtrees():
         document = parse(
             """
@@ -514,6 +520,54 @@ def describe_execute_handles_basic_execution_tasks():
             ],
         )
 
+    @pytest.mark.filterwarnings("ignore:.* was never awaited:RuntimeWarning")
+    def handles_sync_errors_combined_with_async_ones():
+        is_async_resolver_finished = False
+
+        async def async_resolver(_obj, _info):
+            nonlocal is_async_resolver_finished
+            is_async_resolver_finished = True  # pragma: no cover
+
+        schema = GraphQLSchema(
+            GraphQLObjectType(
+                "Query",
+                {
+                    "syncNullError": GraphQLField(
+                        GraphQLNonNull(GraphQLString), resolve=lambda _obj, _info: None
+                    ),
+                    "asyncNullError": GraphQLField(
+                        GraphQLNonNull(GraphQLString), resolve=async_resolver
+                    ),
+                },
+            )
+        )
+
+        document = parse(
+            """
+            {
+              asyncNullError
+              syncNullError
+            }
+            """
+        )
+
+        result = execute(schema, document)
+
+        assert is_async_resolver_finished is False
+
+        assert result == (
+            None,
+            [
+                {
+                    "message": "Cannot return null"
+                    " for non-nullable field Query.syncNullError.",
+                    "locations": [(4, 15)],
+                    "path": ["syncNullError"],
+                }
+            ],
+        )
+
+    @pytest.mark.filterwarnings("ignore:.* was never awaited:RuntimeWarning")
     def full_response_path_is_included_for_non_nullable_fields():
         def resolve_ok(*_args):
             return {}
@@ -563,6 +617,7 @@ def describe_execute_handles_basic_execution_tasks():
             ],
         )
 
+    @pytest.mark.filterwarnings("ignore:.* was never awaited:RuntimeWarning")
     def uses_the_inline_operation_if_no_operation_name_is_provided():
         schema = GraphQLSchema(
             GraphQLObjectType("Type", {"a": GraphQLField(GraphQLString)})
@@ -576,6 +631,7 @@ def describe_execute_handles_basic_execution_tasks():
         result = execute_sync(schema, document, Data())
         assert result == ({"a": "b"}, None)
 
+    @pytest.mark.filterwarnings("ignore:.* was never awaited:RuntimeWarning")
     def uses_the_only_operation_if_no_operation_name_is_provided():
         schema = GraphQLSchema(
             GraphQLObjectType("Type", {"a": GraphQLField(GraphQLString)})
@@ -589,6 +645,7 @@ def describe_execute_handles_basic_execution_tasks():
         result = execute_sync(schema, document, Data())
         assert result == ({"a": "b"}, None)
 
+    @pytest.mark.filterwarnings("ignore:.* was never awaited:RuntimeWarning")
     def uses_the_named_operation_if_operation_name_is_provided():
         schema = GraphQLSchema(
             GraphQLObjectType("Type", {"a": GraphQLField(GraphQLString)})
@@ -736,6 +793,38 @@ def describe_execute_handles_basic_execution_tasks():
         result = execute_sync(schema, document, Data(), operation_name="S")
         assert result == ({"a": "b"}, None)
 
+    def errors_when_using_original_execute_with_schemas_including_experimental_defer():
+        schema = GraphQLSchema(
+            query=GraphQLObjectType("Q", {"a": GraphQLField(GraphQLString)}),
+            directives=[GraphQLDeferDirective],
+        )
+        document = parse("query Q { a }")
+
+        with pytest.raises(GraphQLError) as exc_info:
+            execute(schema, document)
+
+        assert str(exc_info.value) == (
+            "The provided schema unexpectedly contains experimental directives"
+            " (@defer or @stream). These directives may only be utilized"
+            " if experimental execution features are explicitly enabled."
+        )
+
+    def errors_when_using_original_execute_with_schemas_including_experimental_stream():
+        schema = GraphQLSchema(
+            query=GraphQLObjectType("Q", {"a": GraphQLField(GraphQLString)}),
+            directives=[GraphQLStreamDirective],
+        )
+        document = parse("query Q { a }")
+
+        with pytest.raises(GraphQLError) as exc_info:
+            execute(schema, document)
+
+        assert str(exc_info.value) == (
+            "The provided schema unexpectedly contains experimental directives"
+            " (@defer or @stream). These directives may only be utilized"
+            " if experimental execution features are explicitly enabled."
+        )
+
     def resolves_to_an_error_if_schema_does_not_support_operation():
         schema = GraphQLSchema(assume_valid=True)
 
@@ -779,7 +868,7 @@ def describe_execute_handles_basic_execution_tasks():
             ],
         )
 
-    @mark.asyncio
+    @pytest.mark.asyncio()
     async def correct_field_ordering_despite_execution_order():
         schema = GraphQLSchema(
             GraphQLObjectType(
@@ -895,7 +984,7 @@ def describe_execute_handles_basic_execution_tasks():
             None,
         )
 
-    @mark.asyncio
+    @pytest.mark.asyncio()
     async def fails_when_is_type_of_check_is_not_met():
         class Special:
             value: str
@@ -955,7 +1044,8 @@ def describe_execute_handles_basic_execution_tasks():
 
     def fails_when_serialize_of_custom_scalar_does_not_return_a_value():
         custom_scalar = GraphQLScalarType(
-            "CustomScalar", serialize=lambda _value: Undefined  # returns nothing
+            "CustomScalar",
+            serialize=lambda _value: Undefined,  # returns nothing
         )
         schema = GraphQLSchema(
             GraphQLObjectType(
