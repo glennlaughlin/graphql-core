@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from typing import cast
 
 import pytest
+
 from graphql import graphql_sync
 from graphql.pyutils import (
     Description,
@@ -42,7 +43,7 @@ def registered(base: type):
     try:
         yield None
     finally:
-        unregister_description(LazyString)
+        unregister_description(base)
 
 
 def describe_description():

@@ -22,6 +22,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13"
 ]
 packages = [
     { include = "graphql", from = "src" },
@@ -53,11 +54,11 @@ optional = true
 [tool.poetry.group.test.dependencies]
 pytest = [
     { version = "^8.3", python = ">=3.8" },
-    { version = "^7.4", python = "<3.8"}
+    { version = "^7.4", python = "<3.8" }
 ]
 pytest-asyncio = [
     { version = "^0.23.8", python = ">=3.8" },
-    { version = "~0.21.1", python = "<3.8"}
+    { version = "~0.21.1", python = "<3.8" }
 ]
 pytest-benchmark = "^4.0"
 pytest-cov = [
@@ -70,14 +71,15 @@ tox = [
     { version = "^4.16", python = ">=3.8" },
     { version = "^3.28", python = "<3.8" }
 ]
+pytest-codspeed = "^2.2.1"
 
 [tool.poetry.group.lint]
 optional = true
 
 [tool.poetry.group.lint.dependencies]
-ruff = ">=0.5.7,<0.6"
+ruff = ">=0.7,<0.8"
 mypy = [
-    { version = "^1.11", python = ">=3.8" },
+    { version = "^1.12", python = ">=3.8" },
     { version = "~1.4", python = "<3.8" }
 ]
 bump2version = ">=1.0,<2"
@@ -308,12 +310,14 @@ minversion = "7.4"
 addopts = "--benchmark-disable"
 # Deactivate default name pattern for test classes (we use pytest_describe).
 python_classes = "PyTest*"
-# Handle all async fixtures and tests automatically by asyncio
+# Handle all async fixtures and tests automatically by asyncio,
 asyncio_mode = "auto"
 # Set a timeout in seconds for aborting tests that run too long.
 timeout = "100"
 # Ignore config options not (yet) available in older Python versions.
 filterwarnings = "ignore::pytest.PytestConfigWarning"
+# All tests can be found in the tests directory.
+testpaths = ["tests"]
 
 [build-system]
 requires = ["poetry_core>=1.6.1,<2"]

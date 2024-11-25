@@ -13,20 +13,14 @@ from typing import (
     Awaitable,
     Callable,
     Iterable,
-    Iterator,
     List,
     NamedTuple,
     Optional,
-    Sequence,
     Tuple,
     Union,
     cast,
 )
 
-try:
-    from typing import TypedDict
-except ImportError:  # Python < 3.8
-    from typing_extensions import TypedDict
 try:
     from typing import TypeAlias, TypeGuard
 except ImportError:  # Python < 3.10
@@ -37,7 +31,7 @@ try:  # only needed for Python < 3.11
 except ImportError:  # Python < 3.7
     from concurrent.futures import TimeoutError
 
-from ..error import GraphQLError, GraphQLFormattedError, located_error
+from ..error import GraphQLError, located_error
 from ..language import (
     DocumentNode,
     FragmentDefinitionNode,
@@ -82,12 +76,13 @@ from .collect_fields import (
 )
 from .incremental_publisher import (
     ASYNC_DELAY,
-    FormattedIncrementalResult,
+    ExecutionResult,
+    ExperimentalIncrementalExecutionResults,
     IncrementalDataRecord,
     IncrementalPublisher,
-    IncrementalResult,
+    InitialResultRecord,
     StreamItemsRecord,
-    SubsequentIncrementalExecutionResult,
+    SubsequentDataRecord,
 )
 from .middleware import MiddlewareManager
 from .values import get_argument_values, get_directive_values, get_variable_values
@@ -96,7 +91,7 @@ try:  # pragma: no cover
     anext  # noqa: B018
 except NameError:  # pragma: no cover (Python < 3.10)
     # noinspection PyShadowingBuiltins
-    async def anext(iterator: AsyncIterator) -> Any:  # noqa: A001
+    async def anext(iterator: AsyncIterator) -> Any:
         """Return the next item from an async iterator."""
         return await iterator.__anext__()
 
@@ -110,12 +105,7 @@ __all__ = [
     "execute_sync",
     "experimental_execute_incrementally",
     "subscribe",
-    "ExecutionResult",
     "ExecutionContext",
-    "ExperimentalIncrementalExecutionResults",
-    "FormattedExecutionResult",
-    "FormattedInitialIncrementalExecutionResult",
-    "InitialIncrementalExecutionResult",
     "Middleware",
 ]
 
@@ -142,181 +132,7 @@ suppress_timeout_error = suppress(TimeoutError)
 # 3) inline fragment "spreads" e.g. "...on Type { a }"
 
 
-class FormattedExecutionResult(TypedDict, total=False):
-    """Formatted execution result"""
-
-    data: dict[str, Any] | None
-    errors: list[GraphQLFormattedError]
-    extensions: dict[str, Any]
-
-
-class ExecutionResult:
-    """The result of GraphQL execution.
-
-    - ``data`` is the result of a successful execution of the query.
-    - ``errors`` is included when any errors occurred as a non-empty list.
-    - ``extensions`` is reserved for adding non-standard properties.
-    """
-
-    __slots__ = "data", "errors", "extensions"
-
-    data: dict[str, Any] | None
-    errors: list[GraphQLError] | None
-    extensions: dict[str, Any] | None
-
-    def __init__(
-        self,
-        data: dict[str, Any] | None = None,
-        errors: list[GraphQLError] | None = None,
-        extensions: dict[str, Any] | None = None,
-    ) -> None:
-        self.data = data
-        self.errors = errors
-        self.extensions = extensions
-
-    def __repr__(self) -> str:
-        name = self.__class__.__name__
-        ext = "" if self.extensions is None else f", extensions={self.extensions}"
-        return f"{name}(data={self.data!r}, errors={self.errors!r}{ext})"
-
-    def __iter__(self) -> Iterator[Any]:
-        return iter((self.data, self.errors))
-
-    @property
-    def formatted(self) -> FormattedExecutionResult:
-        """Get execution result formatted according to the specification."""
-        formatted: FormattedExecutionResult = {"data": self.data}
-        if self.errors is not None:
-            formatted["errors"] = [error.formatted for error in self.errors]
-        if self.extensions is not None:
-            formatted["extensions"] = self.extensions
-        return formatted
-
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, dict):
-            if "extensions" not in other:
-                return other == {"data": self.data, "errors": self.errors}
-            return other == {
-                "data": self.data,
-                "errors": self.errors,
-                "extensions": self.extensions,
-            }
-        if isinstance(other, tuple):
-            if len(other) == 2:
-                return other == (self.data, self.errors)
-            return other == (self.data, self.errors, self.extensions)
-        return (
-            isinstance(other, self.__class__)
-            and other.data == self.data
-            and other.errors == self.errors
-            and other.extensions == self.extensions
-        )
-
-    def __ne__(self, other: object) -> bool:
-        return not self == other
-
-
-class FormattedInitialIncrementalExecutionResult(TypedDict, total=False):
-    """Formatted initial incremental execution result"""
-
-    data: dict[str, Any] | None
-    errors: list[GraphQLFormattedError]
-    hasNext: bool
-    incremental: list[FormattedIncrementalResult]
-    extensions: dict[str, Any]
-
-
-class InitialIncrementalExecutionResult:
-    """Initial incremental execution result.
-
-    - ``has_next`` is True if a future payload is expected.
-    - ``incremental`` is a list of the results from defer/stream directives.
-    """
-
-    data: dict[str, Any] | None
-    errors: list[GraphQLError] | None
-    incremental: Sequence[IncrementalResult] | None
-    has_next: bool
-    extensions: dict[str, Any] | None
-
-    __slots__ = "data", "errors", "has_next", "incremental", "extensions"
-
-    def __init__(
-        self,
-        data: dict[str, Any] | None = None,
-        errors: list[GraphQLError] | None = None,
-        incremental: Sequence[IncrementalResult] | None = None,
-        has_next: bool = False,
-        extensions: dict[str, Any] | None = None,
-    ) -> None:
-        self.data = data
-        self.errors = errors
-        self.incremental = incremental
-        self.has_next = has_next
-        self.extensions = extensions
-
-    def __repr__(self) -> str:
-        name = self.__class__.__name__
-        args: list[str] = [f"data={self.data!r}, errors={self.errors!r}"]
-        if self.incremental:
-            args.append(f"incremental[{len(self.incremental)}]")
-        if self.has_next:
-            args.append("has_next")
-        if self.extensions:
-            args.append(f"extensions={self.extensions}")
-        return f"{name}({', '.join(args)})"
-
-    @property
-    def formatted(self) -> FormattedInitialIncrementalExecutionResult:
-        """Get execution result formatted according to the specification."""
-        formatted: FormattedInitialIncrementalExecutionResult = {"data": self.data}
-        if self.errors is not None:
-            formatted["errors"] = [error.formatted for error in self.errors]
-        if self.incremental:
-            formatted["incremental"] = [result.formatted for result in self.incremental]
-        formatted["hasNext"] = self.has_next
-        if self.extensions is not None:
-            formatted["extensions"] = self.extensions
-        return formatted
-
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, dict):
-            return (
-                other.get("data") == self.data
-                and other.get("errors") == self.errors
-                and (
-                    "incremental" not in other
-                    or other["incremental"] == self.incremental
-                )
-                and ("hasNext" not in other or other["hasNext"] == self.has_next)
-                and (
-                    "extensions" not in other or other["extensions"] == self.extensions
-                )
-            )
-        if isinstance(other, tuple):
-            size = len(other)
-            return (
-                1 < size < 6
-                and (
-                    self.data,
-                    self.errors,
-                    self.incremental,
-                    self.has_next,
-                    self.extensions,
-                )[:size]
-                == other
-            )
-        return (
-            isinstance(other, self.__class__)
-            and other.data == self.data
-            and other.errors == self.errors
-            and other.incremental == self.incremental
-            and other.has_next == self.has_next
-            and other.extensions == self.extensions
-        )
-
-    def __ne__(self, other: object) -> bool:
-        return not self == other
+Middleware: TypeAlias = Optional[Union[Tuple, List, MiddlewareManager]]
 
 
 class StreamArguments(NamedTuple):
@@ -324,16 +140,6 @@ class StreamArguments(NamedTuple):
 
     initial_count: int
     label: str | None
-
-
-class ExperimentalIncrementalExecutionResults(NamedTuple):
-    """Execution results when retrieved incrementally."""
-
-    initial_result: InitialIncrementalExecutionResult
-    subsequent_results: AsyncGenerator[SubsequentIncrementalExecutionResult, None]
-
-
-Middleware: TypeAlias = Optional[Union[Tuple, List, MiddlewareManager]]
 
 
 class ExecutionContext:
@@ -352,7 +158,6 @@ class ExecutionContext:
     field_resolver: GraphQLFieldResolver
     type_resolver: GraphQLTypeResolver
     subscribe_field_resolver: GraphQLFieldResolver
-    errors: list[GraphQLError]
     incremental_publisher: IncrementalPublisher
     middleware_manager: MiddlewareManager | None
 
@@ -371,7 +176,6 @@ class ExecutionContext:
         field_resolver: GraphQLFieldResolver,
         type_resolver: GraphQLTypeResolver,
         subscribe_field_resolver: GraphQLFieldResolver,
-        errors: list[GraphQLError],
         incremental_publisher: IncrementalPublisher,
         middleware_manager: MiddlewareManager | None,
         is_awaitable: Callable[[Any], bool] | None,
@@ -385,7 +189,6 @@ class ExecutionContext:
         self.field_resolver = field_resolver
         self.type_resolver = type_resolver
         self.subscribe_field_resolver = subscribe_field_resolver
-        self.errors = errors
         self.incremental_publisher = incremental_publisher
         self.middleware_manager = middleware_manager
         if is_awaitable:
@@ -478,29 +281,10 @@ class ExecutionContext:
             field_resolver or default_field_resolver,
             type_resolver or default_type_resolver,
             subscribe_field_resolver or default_field_resolver,
-            [],
             IncrementalPublisher(),
             middleware_manager,
             is_awaitable,
         )
-
-    @staticmethod
-    def build_response(
-        data: dict[str, Any] | None, errors: list[GraphQLError]
-    ) -> ExecutionResult:
-        """Build response.
-
-        Given a completed execution context and data, build the (data, errors) response
-        defined by the "Response" section of the GraphQL spec.
-        """
-        if not errors:
-            return ExecutionResult(data, None)
-        # Sort the error list in order to make it deterministic, since we might have
-        # been using parallel execution.
-        errors.sort(
-            key=lambda error: (error.locations or [], error.path or [], error.message)
-        )
-        return ExecutionResult(data, errors)
 
     def build_per_event_execution_context(self, payload: Any) -> ExecutionContext:
         """Create a copy of the execution context for usage with subscribe events."""
@@ -514,15 +298,14 @@ class ExecutionContext:
             self.field_resolver,
             self.type_resolver,
             self.subscribe_field_resolver,
-            [],
-            # no need to update incrementalPublisher,
-            # incremental delivery is not supported for subscriptions
             self.incremental_publisher,
             self.middleware_manager,
             self.is_awaitable,
         )
 
-    def execute_operation(self) -> AwaitableOrValue[dict[str, Any]]:
+    def execute_operation(
+        self, initial_result_record: InitialResultRecord
+    ) -> AwaitableOrValue[dict[str, Any]]:
         """Execute an operation.
 
         Implements the "Executing operations" section of the spec.
@@ -551,12 +334,17 @@ class ExecutionContext:
             self.execute_fields_serially
             if operation.operation == OperationType.MUTATION
             else self.execute_fields
-        )(root_type, root_value, None, grouped_field_set)  # type: ignore
+        )(root_type, root_value, None, grouped_field_set, initial_result_record)
 
         for patch in patches:
             label, patch_grouped_filed_set = patch
             self.execute_deferred_fragment(
-                root_type, root_value, patch_grouped_filed_set, label, None
+                root_type,
+                root_value,
+                patch_grouped_filed_set,
+                initial_result_record,
+                label,
+                None,
             )
 
         return result
@@ -567,6 +355,7 @@ class ExecutionContext:
         source_value: Any,
         path: Path | None,
         grouped_field_set: GroupedFieldSet,
+        incremental_data_record: IncrementalDataRecord,
     ) -> AwaitableOrValue[dict[str, Any]]:
         """Execute the given fields serially.
 
@@ -581,7 +370,11 @@ class ExecutionContext:
             response_name, field_group = field_item
             field_path = Path(path, response_name, parent_type.name)
             result = self.execute_field(
-                parent_type, source_value, field_group, field_path
+                parent_type,
+                source_value,
+                field_group,
+                field_path,
+                incremental_data_record,
             )
             if result is Undefined:
                 return results
@@ -607,7 +400,7 @@ class ExecutionContext:
         source_value: Any,
         path: Path | None,
         grouped_field_set: GroupedFieldSet,
-        incremental_data_record: IncrementalDataRecord | None = None,
+        incremental_data_record: IncrementalDataRecord,
     ) -> AwaitableOrValue[dict[str, Any]]:
         """Execute the given fields concurrently.
 
@@ -662,7 +455,7 @@ class ExecutionContext:
         source: Any,
         field_group: FieldGroup,
         path: Path,
-        incremental_data_record: IncrementalDataRecord | None = None,
+        incremental_data_record: IncrementalDataRecord,
     ) -> AwaitableOrValue[Any]:
         """Resolve the field on the given source object.
 
@@ -774,7 +567,7 @@ class ExecutionContext:
         return_type: GraphQLOutputType,
         field_group: FieldGroup,
         path: Path,
-        incremental_data_record: IncrementalDataRecord | None = None,
+        incremental_data_record: IncrementalDataRecord,
     ) -> None:
         """Handle error properly according to the field type."""
         error = located_error(raw_error, field_group, path.as_list())
@@ -784,13 +577,9 @@ class ExecutionContext:
         if is_non_null_type(return_type):
             raise error
 
-        errors = (
-            incremental_data_record.errors if incremental_data_record else self.errors
-        )
-
         # Otherwise, error protection is applied, logging the error and resolving a
         # null value for this field if one is encountered.
-        errors.append(error)
+        self.incremental_publisher.add_field_error(incremental_data_record, error)
 
     def complete_value(
         self,
@@ -799,7 +588,7 @@ class ExecutionContext:
         info: GraphQLResolveInfo,
         path: Path,
         result: Any,
-        incremental_data_record: IncrementalDataRecord | None,
+        incremental_data_record: IncrementalDataRecord,
     ) -> AwaitableOrValue[Any]:
         """Complete a value.
 
@@ -888,7 +677,7 @@ class ExecutionContext:
         info: GraphQLResolveInfo,
         path: Path,
         result: Any,
-        incremental_data_record: IncrementalDataRecord | None = None,
+        incremental_data_record: IncrementalDataRecord,
     ) -> Any:
         """Complete an awaitable value."""
         try:
@@ -955,7 +744,7 @@ class ExecutionContext:
         info: GraphQLResolveInfo,
         path: Path,
         async_iterator: AsyncIterator[Any],
-        incremental_data_record: IncrementalDataRecord | None,
+        incremental_data_record: IncrementalDataRecord,
     ) -> list[Any]:
         """Complete an async iterator.
 
@@ -984,8 +773,8 @@ class ExecutionContext:
                                 info,
                                 item_type,
                                 path,
-                                stream.label,
                                 incremental_data_record,
+                                stream.label,
                             )
                         ),
                         timeout=ASYNC_DELAY,
@@ -1039,7 +828,7 @@ class ExecutionContext:
         info: GraphQLResolveInfo,
         path: Path,
         result: AsyncIterable[Any] | Iterable[Any],
-        incremental_data_record: IncrementalDataRecord | None,
+        incremental_data_record: IncrementalDataRecord,
     ) -> AwaitableOrValue[list[Any]]:
         """Complete a list value.
 
@@ -1093,8 +882,8 @@ class ExecutionContext:
                     field_group,
                     info,
                     item_type,
-                    stream.label,
                     previous_incremental_data_record,
+                    stream.label,
                 )
                 continue
 
@@ -1138,7 +927,7 @@ class ExecutionContext:
         field_group: FieldGroup,
         info: GraphQLResolveInfo,
         item_path: Path,
-        incremental_data_record: IncrementalDataRecord | None,
+        incremental_data_record: IncrementalDataRecord,
     ) -> bool:
         """Complete a list item value by adding it to the completed results.
 
@@ -1229,7 +1018,7 @@ class ExecutionContext:
         info: GraphQLResolveInfo,
         path: Path,
         result: Any,
-        incremental_data_record: IncrementalDataRecord | None,
+        incremental_data_record: IncrementalDataRecord,
     ) -> AwaitableOrValue[Any]:
         """Complete an abstract value.
 
@@ -1344,7 +1133,7 @@ class ExecutionContext:
         info: GraphQLResolveInfo,
         path: Path,
         result: Any,
-        incremental_data_record: IncrementalDataRecord | None,
+        incremental_data_record: IncrementalDataRecord,
     ) -> AwaitableOrValue[dict[str, Any]]:
         """Complete an Object value by executing all sub-selections."""
         # If there is an `is_type_of()` predicate function, call it with the current
@@ -1379,7 +1168,7 @@ class ExecutionContext:
         field_group: FieldGroup,
         path: Path,
         result: Any,
-        incremental_data_record: IncrementalDataRecord | None,
+        incremental_data_record: IncrementalDataRecord,
     ) -> AwaitableOrValue[dict[str, Any]]:
         """Collect sub-fields to execute to complete this value."""
         sub_grouped_field_set, sub_patches = self.collect_subfields(
@@ -1396,9 +1185,9 @@ class ExecutionContext:
                 return_type,
                 result,
                 sub_patch_grouped_field_set,
+                incremental_data_record,
                 label,
                 path,
-                incremental_data_record,
             )
 
         return sub_fields
@@ -1474,9 +1263,9 @@ class ExecutionContext:
         parent_type: GraphQLObjectType,
         source_value: Any,
         fields: GroupedFieldSet,
+        parent_context: IncrementalDataRecord,
         label: str | None = None,
         path: Path | None = None,
-        parent_context: IncrementalDataRecord | None = None,
     ) -> None:
         """Execute deferred fragment."""
         incremental_publisher = self.incremental_publisher
@@ -1529,9 +1318,9 @@ class ExecutionContext:
         field_group: FieldGroup,
         info: GraphQLResolveInfo,
         item_type: GraphQLOutputType,
+        parent_context: IncrementalDataRecord,
         label: str | None = None,
-        parent_context: IncrementalDataRecord | None = None,
-    ) -> IncrementalDataRecord:
+    ) -> SubsequentDataRecord:
         """Execute stream field."""
         is_awaitable = self.is_awaitable
         incremental_publisher = self.incremental_publisher
@@ -1678,8 +1467,8 @@ class ExecutionContext:
         info: GraphQLResolveInfo,
         item_type: GraphQLOutputType,
         path: Path,
+        parent_context: IncrementalDataRecord,
         label: str | None = None,
-        parent_context: IncrementalDataRecord | None = None,
     ) -> None:
         """Execute stream iterator."""
         incremental_publisher = self.incremental_publisher
@@ -1877,52 +1666,31 @@ def execute_impl(
     # Errors from sub-fields of a NonNull type may propagate to the top level,
     # at which point we still log the error and null the parent field, which
     # in this case is the entire response.
-    errors = context.errors
     incremental_publisher = context.incremental_publisher
-    build_response = context.build_response
+    initial_result_record = incremental_publisher.prepare_initial_result_record()
     try:
-        result = context.execute_operation()
+        data = context.execute_operation(initial_result_record)
+        if context.is_awaitable(data):
 
-        if context.is_awaitable(result):
-            # noinspection PyShadowingNames
-            async def await_result() -> Any:
+            async def await_response() -> (
+                ExecutionResult | ExperimentalIncrementalExecutionResults
+            ):
                 try:
-                    initial_result = build_response(
-                        await result,  # type: ignore
-                        errors,
+                    return incremental_publisher.build_data_response(
+                        initial_result_record,
+                        await data,  # type: ignore
                     )
-                    incremental_publisher.publish_initial()
-                    if incremental_publisher.has_next():
-                        return ExperimentalIncrementalExecutionResults(
-                            initial_result=InitialIncrementalExecutionResult(
-                                initial_result.data,
-                                initial_result.errors,
-                                has_next=True,
-                            ),
-                            subsequent_results=incremental_publisher.subscribe(),
-                        )
                 except GraphQLError as error:
-                    errors.append(error)
-                    return build_response(None, errors)
-                return initial_result
+                    return incremental_publisher.build_error_response(
+                        initial_result_record, error
+                    )
 
-            return await_result()
+            return await_response()
 
-        initial_result = build_response(result, errors)  # type: ignore
-        incremental_publisher.publish_initial()
-        if incremental_publisher.has_next():
-            return ExperimentalIncrementalExecutionResults(
-                initial_result=InitialIncrementalExecutionResult(
-                    initial_result.data,
-                    initial_result.errors,
-                    has_next=True,
-                ),
-                subsequent_results=incremental_publisher.subscribe(),
-            )
+        return incremental_publisher.build_data_response(initial_result_record, data)  # type: ignore
+
     except GraphQLError as error:
-        errors.append(error)
-        return build_response(None, errors)
-    return initial_result
+        return incremental_publisher.build_error_response(initial_result_record, error)
 
 
 def assume_not_awaitable(_value: Any) -> bool:
