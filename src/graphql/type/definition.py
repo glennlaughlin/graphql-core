@@ -70,45 +70,6 @@ if TYPE_CHECKING:
     from .schema import GraphQLSchema
 
 __all__ = [
-    "is_type",
-    "is_scalar_type",
-    "is_object_type",
-    "is_interface_type",
-    "is_union_type",
-    "is_enum_type",
-    "is_input_object_type",
-    "is_list_type",
-    "is_non_null_type",
-    "is_input_type",
-    "is_output_type",
-    "is_leaf_type",
-    "is_composite_type",
-    "is_abstract_type",
-    "is_wrapping_type",
-    "is_nullable_type",
-    "is_named_type",
-    "is_required_argument",
-    "is_required_input_field",
-    "assert_type",
-    "assert_scalar_type",
-    "assert_object_type",
-    "assert_interface_type",
-    "assert_union_type",
-    "assert_enum_type",
-    "assert_input_object_type",
-    "assert_list_type",
-    "assert_non_null_type",
-    "assert_input_type",
-    "assert_output_type",
-    "assert_leaf_type",
-    "assert_composite_type",
-    "assert_abstract_type",
-    "assert_wrapping_type",
-    "assert_nullable_type",
-    "assert_named_type",
-    "get_nullable_type",
-    "get_named_type",
-    "resolve_thunk",
     "GraphQLAbstractType",
     "GraphQLArgument",
     "GraphQLArgumentKwargs",
@@ -135,23 +96,23 @@ __all__ = [
     "GraphQLIsTypeOfFn",
     "GraphQLLeafType",
     "GraphQLList",
-    "GraphQLNamedType",
-    "GraphQLNamedTypeKwargs",
     "GraphQLNamedInputType",
     "GraphQLNamedOutputType",
-    "GraphQLNullableType",
+    "GraphQLNamedType",
+    "GraphQLNamedTypeKwargs",
+    "GraphQLNonNull",
     "GraphQLNullableInputType",
     "GraphQLNullableOutputType",
-    "GraphQLNonNull",
-    "GraphQLResolveInfo",
-    "GraphQLScalarType",
-    "GraphQLScalarTypeKwargs",
-    "GraphQLScalarSerializer",
-    "GraphQLScalarValueParser",
-    "GraphQLScalarLiteralParser",
+    "GraphQLNullableType",
     "GraphQLObjectType",
     "GraphQLObjectTypeKwargs",
     "GraphQLOutputType",
+    "GraphQLResolveInfo",
+    "GraphQLScalarLiteralParser",
+    "GraphQLScalarSerializer",
+    "GraphQLScalarType",
+    "GraphQLScalarTypeKwargs",
+    "GraphQLScalarValueParser",
     "GraphQLType",
     "GraphQLTypeResolver",
     "GraphQLUnionType",
@@ -160,6 +121,45 @@ __all__ = [
     "Thunk",
     "ThunkCollection",
     "ThunkMapping",
+    "assert_abstract_type",
+    "assert_composite_type",
+    "assert_enum_type",
+    "assert_input_object_type",
+    "assert_input_type",
+    "assert_interface_type",
+    "assert_leaf_type",
+    "assert_list_type",
+    "assert_named_type",
+    "assert_non_null_type",
+    "assert_nullable_type",
+    "assert_object_type",
+    "assert_output_type",
+    "assert_scalar_type",
+    "assert_type",
+    "assert_union_type",
+    "assert_wrapping_type",
+    "get_named_type",
+    "get_nullable_type",
+    "is_abstract_type",
+    "is_composite_type",
+    "is_enum_type",
+    "is_input_object_type",
+    "is_input_type",
+    "is_interface_type",
+    "is_leaf_type",
+    "is_list_type",
+    "is_named_type",
+    "is_non_null_type",
+    "is_nullable_type",
+    "is_object_type",
+    "is_output_type",
+    "is_required_argument",
+    "is_required_input_field",
+    "is_scalar_type",
+    "is_type",
+    "is_union_type",
+    "is_wrapping_type",
+    "resolve_thunk",
 ]
 
 
@@ -386,8 +386,7 @@ class GraphQLScalarType(GraphQLNamedType):
             self.parse_literal = parse_literal  # type: ignore
         if parse_literal is not None and parse_value is None:
             msg = (
-                f"{name} must provide"
-                " both 'parse_value' and 'parse_literal' functions."
+                f"{name} must provide both 'parse_value' and 'parse_literal' functions."
             )
             raise TypeError(msg)
         self.specified_by_url = specified_by_url
@@ -790,7 +789,7 @@ class GraphQLObjectType(GraphQLNamedType):
         return {
             assert_name(name): value
             if isinstance(value, GraphQLField)
-            else GraphQLField(value)  # type: ignore
+            else GraphQLField(value)
             for name, value in fields.items()
         }
 
@@ -895,7 +894,7 @@ class GraphQLInterfaceType(GraphQLNamedType):
         return {
             assert_name(name): value
             if isinstance(value, GraphQLField)
-            else GraphQLField(value)  # type: ignore
+            else GraphQLField(value)
             for name, value in fields.items()
         }
 
@@ -1285,7 +1284,7 @@ class GraphQLInputObjectType(GraphQLNamedType):
 
     Example::
 
-        NonNullFloat = GraphQLNonNull(GraphQLFloat())
+        NonNullFloat = GraphQLNonNull(GraphQLFloat)
 
         class GeoPoint(GraphQLInputObjectType):
             name = 'GeoPoint'
@@ -1293,7 +1292,7 @@ class GraphQLInputObjectType(GraphQLNamedType):
                 'lat': GraphQLInputField(NonNullFloat),
                 'lon': GraphQLInputField(NonNullFloat),
                 'alt': GraphQLInputField(
-                          GraphQLFloat(), default_value=0)
+                          GraphQLFloat, default_value=0)
             }
 
     The outbound values will be Python dictionaries by default, but you can have them
@@ -1362,7 +1361,7 @@ class GraphQLInputObjectType(GraphQLNamedType):
         return {
             assert_name(name): value
             if isinstance(value, GraphQLInputField)
-            else GraphQLInputField(value)  # type: ignore
+            else GraphQLInputField(value)
             for name, value in fields.items()
         }
 
@@ -1512,7 +1511,7 @@ class GraphQLNonNull(GraphQLWrappingType[GNT_co]):
         class RowType(GraphQLObjectType):
             name = 'Row'
             fields = {
-                'id': GraphQLField(GraphQLNonNull(GraphQLString()))
+                'id': GraphQLField(GraphQLNonNull(GraphQLString))
             }
 
     Note: the enforcement of non-nullability occurs within the executor.

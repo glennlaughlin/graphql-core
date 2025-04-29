@@ -12,7 +12,7 @@ from graphql.execution import (
     IncrementalStreamResult,
     experimental_execute_incrementally,
 )
-from graphql.execution.incremental_publisher import StreamItemsRecord
+from graphql.execution.incremental_publisher import StreamRecord
 from graphql.language import DocumentNode, parse
 from graphql.pyutils import Path
 from graphql.type import (
@@ -148,45 +148,39 @@ def modified_args(args: dict[str, Any], **modifications: Any) -> dict[str, Any]:
 
 def describe_execute_stream_directive():
     def can_format_and_print_incremental_stream_result():
-        result = IncrementalStreamResult()
-        assert result.formatted == {"items": None}
-        assert str(result) == "IncrementalStreamResult(items=None, errors=None)"
+        result = IncrementalStreamResult(items=["hello", "world"], id="foo")
+        assert result.formatted == {"items": ["hello", "world"], "id": "foo"}
+        assert (
+            str(result) == "IncrementalStreamResult(items=['hello', 'world'], id='foo')"
+        )
 
         result = IncrementalStreamResult(
             items=["hello", "world"],
-            errors=[GraphQLError("msg")],
-            path=["foo", 1],
-            label="bar",
+            id="foo",
+            sub_path=["bar", 1],
+            errors=[GraphQLError("oops")],
             extensions={"baz": 2},
         )
         assert result.formatted == {
             "items": ["hello", "world"],
-            "errors": [{"message": "msg"}],
+            "id": "foo",
+            "subPath": ["bar", 1],
+            "errors": [{"message": "oops"}],
             "extensions": {"baz": 2},
-            "label": "bar",
-            "path": ["foo", 1],
         }
         assert (
             str(result) == "IncrementalStreamResult(items=['hello', 'world'],"
-            " errors=[GraphQLError('msg')], path=['foo', 1], label='bar',"
+            " id='foo', sub_path=['bar', 1], errors=[GraphQLError('oops')],"
             " extensions={'baz': 2})"
         )
-
-    def can_print_stream_record():
-        record = StreamItemsRecord(None, None, None)
-        assert str(record) == "StreamItemsRecord(path=[])"
-        record = StreamItemsRecord("foo", Path(None, "bar", "Bar"), None)
-        assert str(record) == "StreamItemsRecord(" "path=['bar'], label='foo')"
-        record.items = ["hello", "world"]
-        assert str(record) == "StreamItemsRecord(" "path=['bar'], label='foo', items)"
 
     # noinspection PyTypeChecker
     def can_compare_incremental_stream_result():
         args: dict[str, Any] = {
             "items": ["hello", "world"],
-            "errors": [GraphQLError("msg")],
-            "path": ["foo", 1],
-            "label": "bar",
+            "id": "foo",
+            "sub_path": ["bar", 1],
+            "errors": [GraphQLError("oops")],
             "extensions": {"baz": 2},
         }
         result = IncrementalStreamResult(**args)
@@ -194,9 +188,11 @@ def describe_execute_stream_directive():
         assert result != IncrementalStreamResult(
             **modified_args(args, items=["hello", "foo"])
         )
+        assert result != IncrementalStreamResult(**modified_args(args, id="bar"))
+        assert result != IncrementalStreamResult(
+            **modified_args(args, sub_path=["bar", 2])
+        )
         assert result != IncrementalStreamResult(**modified_args(args, errors=[]))
-        assert result != IncrementalStreamResult(**modified_args(args, path=["foo", 2]))
-        assert result != IncrementalStreamResult(**modified_args(args, label="baz"))
         assert result != IncrementalStreamResult(
             **modified_args(args, extensions={"baz": 1})
         )
@@ -205,12 +201,20 @@ def describe_execute_stream_directive():
         assert result == tuple(args.values())[:3]
         assert result == tuple(args.values())[:2]
         assert result != tuple(args.values())[:1]
-        assert result != (["hello", "world"], [])
+        assert result != (["hello", "world"], "bar")
+        args["subPath"] = args.pop("sub_path")
         assert result == args
-        assert result == dict(list(args.items())[:2])
-        assert result == dict(list(args.items())[:3])
-        assert result != dict(list(args.items())[:2] + [("path", ["foo", 2])])
-        assert result != {**args, "label": "baz"}
+        assert result != {**args, "items": ["hello", "foo"]}
+        assert result != {**args, "id": "bar"}
+        assert result != {**args, "subPath": ["bar", 2]}
+        assert result != {**args, "errors": []}
+        assert result != {**args, "extensions": {"baz": 1}}
+
+    def can_print_stream_record():
+        record = StreamRecord(Path(None, 0, None))
+        assert str(record) == "StreamRecord(path=[0])"
+        record = StreamRecord(Path(None, "bar", "Bar"), "foo")
+        assert str(record) == "StreamRecord(path=['bar'], label='foo')"
 
     @pytest.mark.asyncio
     async def can_stream_a_list_field():
@@ -220,17 +224,14 @@ def describe_execute_stream_directive():
         )
         assert result == [
             {
-                "data": {
-                    "scalarList": ["apple"],
-                },
+                "data": {"scalarList": ["apple"]},
+                "pending": [{"id": "0", "path": ["scalarList"]}],
                 "hasNext": True,
             },
+            {"incremental": [{"items": ["banana"], "id": "0"}], "hasNext": True},
             {
-                "incremental": [{"items": ["banana"], "path": ["scalarList", 1]}],
-                "hasNext": True,
-            },
-            {
-                "incremental": [{"items": ["coconut"], "path": ["scalarList", 2]}],
+                "incremental": [{"items": ["coconut"], "id": "0"}],
+                "completed": [{"id": "0"}],
                 "hasNext": False,
             },
         ]
@@ -243,21 +244,15 @@ def describe_execute_stream_directive():
         )
         assert result == [
             {
-                "data": {
-                    "scalarList": [],
-                },
+                "data": {"scalarList": []},
+                "pending": [{"id": "0", "path": ["scalarList"]}],
                 "hasNext": True,
             },
+            {"incremental": [{"items": ["apple"], "id": "0"}], "hasNext": True},
+            {"incremental": [{"items": ["banana"], "id": "0"}], "hasNext": True},
             {
-                "incremental": [{"items": ["apple"], "path": ["scalarList", 0]}],
-                "hasNext": True,
-            },
-            {
-                "incremental": [{"items": ["banana"], "path": ["scalarList", 1]}],
-                "hasNext": True,
-            },
-            {
-                "incremental": [{"items": ["coconut"], "path": ["scalarList", 2]}],
+                "incremental": [{"items": ["coconut"], "id": "0"}],
+                "completed": [{"id": "0"}],
                 "hasNext": False,
             },
         ]
@@ -269,9 +264,7 @@ def describe_execute_stream_directive():
             document, {"scalarList": ["apple", "banana", "coconut"]}
         )
         assert result == {
-            "data": {
-                "scalarList": None,
-            },
+            "data": {"scalarList": None},
             "errors": [
                 {
                     "message": "initialCount must be a positive integer",
@@ -286,9 +279,7 @@ def describe_execute_stream_directive():
         document = parse("{ scalarList @stream(initialCount: 1.5) }")
         result = await complete(document, {"scalarList": ["apple", "half of a banana"]})
         assert result == {
-            "data": {
-                "scalarList": None,
-            },
+            "data": {"scalarList": None},
             "errors": [
                 {
                     "message": "Argument 'initialCount' has invalid value 1.5.",
@@ -308,29 +299,16 @@ def describe_execute_stream_directive():
         )
         assert result == [
             {
-                "data": {
-                    "scalarList": ["apple"],
-                },
-                "hasNext": True,
-            },
-            {
-                "incremental": [
-                    {
-                        "items": ["banana"],
-                        "path": ["scalarList", 1],
-                        "label": "scalar-stream",
-                    }
+                "data": {"scalarList": ["apple"]},
+                "pending": [
+                    {"id": "0", "path": ["scalarList"], "label": "scalar-stream"}
                 ],
                 "hasNext": True,
             },
+            {"incremental": [{"items": ["banana"], "id": "0"}], "hasNext": True},
             {
-                "incremental": [
-                    {
-                        "items": ["coconut"],
-                        "path": ["scalarList", 2],
-                        "label": "scalar-stream",
-                    }
-                ],
+                "incremental": [{"items": ["coconut"], "id": "0"}],
+                "completed": [{"id": "0"}],
                 "hasNext": False,
             },
         ]
@@ -343,12 +321,7 @@ def describe_execute_stream_directive():
             "data": {"scalarList": None},
             "errors": [
                 {
-                    "locations": [
-                        {
-                            "line": 1,
-                            "column": 46,
-                        }
-                    ],
+                    "locations": [{"line": 1, "column": 46}],
                     "message": "Argument 'label' has invalid value 42.",
                     "path": ["scalarList"],
                 }
@@ -361,11 +334,7 @@ def describe_execute_stream_directive():
         result = await complete(
             document, {"scalarList": ["apple", "banana", "coconut"]}
         )
-        assert result == {
-            "data": {
-                "scalarList": ["apple", "banana", "coconut"],
-            },
-        }
+        assert result == {"data": {"scalarList": ["apple", "banana", "coconut"]}}
 
     @pytest.mark.asyncio
     @pytest.mark.filterwarnings("ignore:.* was never awaited:RuntimeWarning")
@@ -379,18 +348,13 @@ def describe_execute_stream_directive():
         )
         assert result == [
             {
-                "data": {
-                    "scalarList": ["apple", "banana"],
-                },
+                "data": {"scalarList": ["apple", "banana"]},
+                "pending": [{"id": "0", "path": ["scalarList"]}],
                 "hasNext": True,
             },
             {
-                "incremental": [
-                    {
-                        "items": ["coconut"],
-                        "path": ["scalarList", 2],
-                    }
-                ],
+                "incremental": [{"items": ["coconut"], "id": "0"}],
+                "completed": [{"id": "0"}],
                 "hasNext": False,
             },
         ]
@@ -410,27 +374,19 @@ def describe_execute_stream_directive():
         )
         assert result == [
             {
-                "data": {
-                    "scalarListList": [["apple", "apple", "apple"]],
-                },
+                "data": {"scalarListList": [["apple", "apple", "apple"]]},
+                "pending": [{"id": "0", "path": ["scalarListList"]}],
+                "hasNext": True,
+            },
+            {
+                "incremental": [{"items": [["banana", "banana", "banana"]], "id": "0"}],
                 "hasNext": True,
             },
             {
                 "incremental": [
-                    {
-                        "items": [["banana", "banana", "banana"]],
-                        "path": ["scalarListList", 1],
-                    }
+                    {"items": [["coconut", "coconut", "coconut"]], "id": "0"}
                 ],
-                "hasNext": True,
-            },
-            {
-                "incremental": [
-                    {
-                        "items": [["coconut", "coconut", "coconut"]],
-                        "path": ["scalarListList", 2],
-                    }
-                ],
+                "completed": [{"id": "0"}],
                 "hasNext": False,
             },
         ]
@@ -449,7 +405,6 @@ def describe_execute_stream_directive():
         )
 
         async def await_friend(f):
-            await sleep(0)
             return f
 
         result = await complete(
@@ -464,15 +419,12 @@ def describe_execute_stream_directive():
                         {"name": "Han", "id": "2"},
                     ],
                 },
+                "pending": [{"id": "0", "path": ["friendList"]}],
                 "hasNext": True,
             },
             {
-                "incremental": [
-                    {
-                        "items": [{"name": "Leia", "id": "3"}],
-                        "path": ["friendList", 2],
-                    }
-                ],
+                "incremental": [{"items": [{"name": "Leia", "id": "3"}], "id": "0"}],
+                "completed": [{"id": "0"}],
                 "hasNext": False,
             },
         ]
@@ -491,7 +443,6 @@ def describe_execute_stream_directive():
         )
 
         async def await_friend(f):
-            await sleep(0)
             return f
 
         result = await complete(
@@ -501,33 +452,20 @@ def describe_execute_stream_directive():
         assert result == [
             {
                 "data": {"friendList": []},
+                "pending": [{"id": "0", "path": ["friendList"]}],
                 "hasNext": True,
             },
             {
-                "incremental": [
-                    {
-                        "items": [{"name": "Luke", "id": "1"}],
-                        "path": ["friendList", 0],
-                    }
-                ],
+                "incremental": [{"items": [{"name": "Luke", "id": "1"}], "id": "0"}],
                 "hasNext": True,
             },
             {
-                "incremental": [
-                    {
-                        "items": [{"name": "Han", "id": "2"}],
-                        "path": ["friendList", 1],
-                    }
-                ],
+                "incremental": [{"items": [{"name": "Han", "id": "2"}], "id": "0"}],
                 "hasNext": True,
             },
             {
-                "incremental": [
-                    {
-                        "items": [{"name": "Leia", "id": "3"}],
-                        "path": ["friendList", 2],
-                    }
-                ],
+                "incremental": [{"items": [{"name": "Leia", "id": "3"}], "id": "0"}],
+                "completed": [{"id": "0"}],
                 "hasNext": False,
             },
         ]
@@ -567,15 +505,12 @@ def describe_execute_stream_directive():
                         {"name": "Han", "id": "2"},
                     ]
                 },
+                "pending": [{"id": "0", "path": ["friendList"]}],
                 "hasNext": True,
             },
             {
-                "incremental": [
-                    {
-                        "items": [{"name": "Leia", "id": "3"}],
-                        "path": ["friendList", 2],
-                    }
-                ],
+                "incremental": [{"items": [{"name": "Leia", "id": "3"}], "id": "0"}],
+                "completed": [{"id": "0"}],
                 "hasNext": False,
             },
         ]
@@ -594,7 +529,6 @@ def describe_execute_stream_directive():
         )
 
         async def await_friend(f, i):
-            await sleep(0)
             if i == 1:
                 raise RuntimeError("bad")
             return f
@@ -617,15 +551,12 @@ def describe_execute_stream_directive():
                         "path": ["friendList", 1],
                     }
                 ],
+                "pending": [{"id": "0", "path": ["friendList"]}],
                 "hasNext": True,
             },
             {
-                "incremental": [
-                    {
-                        "items": [{"name": "Leia", "id": "3"}],
-                        "path": ["friendList", 2],
-                    }
-                ],
+                "incremental": [{"items": [{"name": "Leia", "id": "3"}], "id": "0"}],
+                "completed": [{"id": "0"}],
                 "hasNext": False,
             },
         ]
@@ -644,7 +575,6 @@ def describe_execute_stream_directive():
         )
 
         async def await_friend(f, i):
-            await sleep(0)
             if i == 1:
                 raise RuntimeError("bad")
             return f
@@ -660,13 +590,14 @@ def describe_execute_stream_directive():
         assert result == [
             {
                 "data": {"friendList": [{"name": "Luke", "id": "1"}]},
+                "pending": [{"id": "0", "path": ["friendList"]}],
                 "hasNext": True,
             },
             {
                 "incremental": [
                     {
                         "items": [None],
-                        "path": ["friendList", 1],
+                        "id": "0",
                         "errors": [
                             {
                                 "message": "bad",
@@ -679,12 +610,8 @@ def describe_execute_stream_directive():
                 "hasNext": True,
             },
             {
-                "incremental": [
-                    {
-                        "items": [{"name": "Leia", "id": "3"}],
-                        "path": ["friendList", 2],
-                    }
-                ],
+                "incremental": [{"items": [{"name": "Leia", "id": "3"}], "id": "0"}],
+                "completed": [{"id": "0"}],
                 "hasNext": False,
             },
         ]
@@ -704,45 +631,28 @@ def describe_execute_stream_directive():
 
         async def friend_list(_info):
             for i in range(3):
-                await sleep(0)
                 yield friends[i]
 
         result = await complete(document, {"friendList": friend_list})
         assert result == [
             {
                 "data": {"friendList": []},
+                "pending": [{"id": "0", "path": ["friendList"]}],
                 "hasNext": True,
             },
             {
-                "incremental": [
-                    {
-                        "items": [{"name": "Luke", "id": "1"}],
-                        "path": ["friendList", 0],
-                    }
-                ],
+                "incremental": [{"items": [{"name": "Luke", "id": "1"}], "id": "0"}],
                 "hasNext": True,
             },
             {
-                "incremental": [
-                    {
-                        "items": [{"name": "Han", "id": "2"}],
-                        "path": ["friendList", 1],
-                    }
-                ],
+                "incremental": [{"items": [{"name": "Han", "id": "2"}], "id": "0"}],
                 "hasNext": True,
             },
             {
-                "incremental": [
-                    {
-                        "items": [{"name": "Leia", "id": "3"}],
-                        "path": ["friendList", 2],
-                    }
-                ],
+                "incremental": [{"items": [{"name": "Leia", "id": "3"}], "id": "0"}],
                 "hasNext": True,
             },
-            {
-                "hasNext": False,
-            },
+            {"completed": [{"id": "0"}], "hasNext": False},
         ]
 
     @pytest.mark.asyncio
@@ -760,7 +670,6 @@ def describe_execute_stream_directive():
 
         async def friend_list(_info):
             for i in range(3):
-                await sleep(0)
                 yield friends[i]
 
         result = await complete(document, {"friendList": friend_list})
@@ -772,20 +681,14 @@ def describe_execute_stream_directive():
                         {"name": "Han", "id": "2"},
                     ]
                 },
+                "pending": [{"id": "0", "path": ["friendList"]}],
                 "hasNext": True,
             },
             {
-                "incremental": [
-                    {
-                        "items": [{"name": "Leia", "id": "3"}],
-                        "path": ["friendList", 2],
-                    }
-                ],
+                "incremental": [{"items": [{"name": "Leia", "id": "3"}], "id": "0"}],
                 "hasNext": True,
             },
-            {
-                "hasNext": False,
-            },
+            {"completed": [{"id": "0"}], "hasNext": False},
         ]
 
     @pytest.mark.asyncio
@@ -831,7 +734,6 @@ def describe_execute_stream_directive():
 
         async def friend_list(_info):
             for i in range(3):
-                await sleep(0)
                 yield friends[i]
 
         result = await complete_async(document, 3, {"friendList": friend_list})
@@ -845,6 +747,7 @@ def describe_execute_stream_directive():
                             {"name": "Han", "id": "2"},
                         ]
                     },
+                    "pending": [{"id": "0", "path": ["friendList"]}],
                     "hasNext": True,
                 },
             },
@@ -852,15 +755,15 @@ def describe_execute_stream_directive():
                 "done": False,
                 "value": {
                     "incremental": [
-                        {
-                            "items": [{"name": "Leia", "id": "3"}],
-                            "path": ["friendList", 2],
-                        }
+                        {"items": [{"name": "Leia", "id": "3"}], "id": "0"}
                     ],
                     "hasNext": True,
                 },
             },
-            {"done": False, "value": {"hasNext": False}},
+            {
+                "done": False,
+                "value": {"completed": [{"id": "0"}], "hasNext": False},
+            },
             {"done": True, "value": None},
         ]
 
@@ -878,9 +781,7 @@ def describe_execute_stream_directive():
         )
 
         async def friend_list(_info):
-            await sleep(0)
             yield friends[0]
-            await sleep(0)
             raise RuntimeError("bad")
 
         result = await complete(document, {"friendList": friend_list})
@@ -909,24 +810,20 @@ def describe_execute_stream_directive():
         )
 
         async def friend_list(_info):
-            await sleep(0)
             yield friends[0]
-            await sleep(0)
             raise RuntimeError("bad")
 
         result = await complete(document, {"friendList": friend_list})
         assert result == [
             {
-                "data": {
-                    "friendList": [{"name": "Luke", "id": "1"}],
-                },
+                "data": {"friendList": [{"name": "Luke", "id": "1"}]},
+                "pending": [{"id": "0", "path": ["friendList"]}],
                 "hasNext": True,
             },
             {
-                "incremental": [
+                "completed": [
                     {
-                        "items": None,
-                        "path": ["friendList", 1],
+                        "id": "0",
                         "errors": [
                             {
                                 "message": "bad",
@@ -957,16 +854,14 @@ def describe_execute_stream_directive():
         )
         assert result == [
             {
-                "data": {
-                    "nonNullFriendList": [{"name": "Luke"}],
-                },
+                "data": {"nonNullFriendList": [{"name": "Luke"}]},
+                "pending": [{"id": "0", "path": ["nonNullFriendList"]}],
                 "hasNext": True,
             },
             {
-                "incremental": [
+                "completed": [
                     {
-                        "items": None,
-                        "path": ["nonNullFriendList", 1],
+                        "id": "0",
                         "errors": [
                             {
                                 "message": "Cannot return null for non-nullable field"
@@ -995,9 +890,7 @@ def describe_execute_stream_directive():
 
         async def friend_list(_info):
             try:
-                await sleep(0)
                 yield friends[0]
-                await sleep(0)
                 yield None
             finally:
                 raise RuntimeError("Oops")
@@ -1005,16 +898,14 @@ def describe_execute_stream_directive():
         result = await complete(document, {"nonNullFriendList": friend_list})
         assert result == [
             {
-                "data": {
-                    "nonNullFriendList": [{"name": "Luke"}],
-                },
+                "data": {"nonNullFriendList": [{"name": "Luke"}]},
+                "pending": [{"id": "0", "path": ["nonNullFriendList"]}],
                 "hasNext": True,
             },
             {
-                "incremental": [
+                "completed": [
                     {
-                        "items": None,
-                        "path": ["nonNullFriendList", 1],
+                        "id": "0",
                         "errors": [
                             {
                                 "message": "Cannot return null for non-nullable field"
@@ -1045,16 +936,15 @@ def describe_execute_stream_directive():
         result = await complete(document, {"scalarList": scalar_list})
         assert result == [
             {
-                "data": {
-                    "scalarList": ["Luke"],
-                },
+                "data": {"scalarList": ["Luke"]},
+                "pending": [{"id": "0", "path": ["scalarList"]}],
                 "hasNext": True,
             },
             {
                 "incremental": [
                     {
                         "items": [None],
-                        "path": ["scalarList", 1],
+                        "id": "0",
                         "errors": [
                             {
                                 "message": "String cannot represent value: {}",
@@ -1064,6 +954,7 @@ def describe_execute_stream_directive():
                         ],
                     },
                 ],
+                "completed": [{"id": "0"}],
                 "hasNext": False,
             },
         ]
@@ -1084,7 +975,6 @@ def describe_execute_stream_directive():
             raise RuntimeError("Oops")
 
         async def get_friend(i):
-            await sleep(0)
             return {"nonNullName": throw() if i < 0 else friends[i].name}
 
         def get_friends(_info):
@@ -1098,16 +988,15 @@ def describe_execute_stream_directive():
         )
         assert result == [
             {
-                "data": {
-                    "friendList": [{"nonNullName": "Luke"}],
-                },
+                "data": {"friendList": [{"nonNullName": "Luke"}]},
+                "pending": [{"id": "0", "path": ["friendList"]}],
                 "hasNext": True,
             },
             {
                 "incremental": [
                     {
                         "items": [None],
-                        "path": ["friendList", 1],
+                        "id": "0",
                         "errors": [
                             {
                                 "message": "Oops",
@@ -1120,12 +1009,8 @@ def describe_execute_stream_directive():
                 "hasNext": True,
             },
             {
-                "incremental": [
-                    {
-                        "items": [{"nonNullName": "Han"}],
-                        "path": ["friendList", 2],
-                    },
-                ],
+                "incremental": [{"items": [{"nonNullName": "Han"}], "id": "0"}],
+                "completed": [{"id": "0"}],
                 "hasNext": False,
             },
         ]
@@ -1143,7 +1028,6 @@ def describe_execute_stream_directive():
         )
 
         async def get_friend_name(i):
-            await sleep(0)
             if i < 0:
                 raise RuntimeError("Oops")
             return friends[i].name
@@ -1159,16 +1043,15 @@ def describe_execute_stream_directive():
         )
         assert result == [
             {
-                "data": {
-                    "friendList": [{"nonNullName": "Luke"}],
-                },
+                "data": {"friendList": [{"nonNullName": "Luke"}]},
+                "pending": [{"id": "0", "path": ["friendList"]}],
                 "hasNext": True,
             },
             {
                 "incremental": [
                     {
                         "items": [None],
-                        "path": ["friendList", 1],
+                        "id": "0",
                         "errors": [
                             {
                                 "message": "Oops",
@@ -1181,12 +1064,8 @@ def describe_execute_stream_directive():
                 "hasNext": True,
             },
             {
-                "incremental": [
-                    {
-                        "items": [{"nonNullName": "Han"}],
-                        "path": ["friendList", 2],
-                    }
-                ],
+                "incremental": [{"items": [{"nonNullName": "Han"}], "id": "0"}],
+                "completed": [{"id": "0"}],
                 "hasNext": False,
             },
         ]
@@ -1207,7 +1086,6 @@ def describe_execute_stream_directive():
             raise RuntimeError("Oops")
 
         async def get_friend(i):
-            await sleep(0)
             return {"nonNullName": throw() if i < 0 else friends[i].name}
 
         def get_friends(_info):
@@ -1221,16 +1099,14 @@ def describe_execute_stream_directive():
         )
         assert result == [
             {
-                "data": {
-                    "nonNullFriendList": [{"nonNullName": "Luke"}],
-                },
+                "data": {"nonNullFriendList": [{"nonNullName": "Luke"}]},
+                "pending": [{"id": "0", "path": ["nonNullFriendList"]}],
                 "hasNext": True,
             },
             {
-                "incremental": [
+                "completed": [
                     {
-                        "items": None,
-                        "path": ["nonNullFriendList", 1],
+                        "id": "0",
                         "errors": [
                             {
                                 "message": "Oops",
@@ -1257,7 +1133,6 @@ def describe_execute_stream_directive():
         )
 
         async def get_friend_name(i):
-            await sleep(0)
             if i < 0:
                 raise RuntimeError("Oops")
             return friends[i].name
@@ -1276,13 +1151,13 @@ def describe_execute_stream_directive():
                 "data": {
                     "nonNullFriendList": [{"nonNullName": "Luke"}],
                 },
+                "pending": [{"id": "0", "path": ["nonNullFriendList"]}],
                 "hasNext": True,
             },
             {
-                "incremental": [
+                "completed": [
                     {
-                        "items": None,
-                        "path": ["nonNullFriendList", 1],
+                        "id": "0",
                         "errors": [
                             {
                                 "message": "Oops",
@@ -1312,7 +1187,6 @@ def describe_execute_stream_directive():
             raise RuntimeError("Oops")
 
         async def get_friend(i):
-            await sleep(0)
             return {"nonNullName": throw() if i < 0 else friends[i].name}
 
         async def get_friends(_info):
@@ -1327,16 +1201,15 @@ def describe_execute_stream_directive():
         )
         assert result == [
             {
-                "data": {
-                    "friendList": [{"nonNullName": "Luke"}],
-                },
+                "data": {"friendList": [{"nonNullName": "Luke"}]},
+                "pending": [{"id": "0", "path": ["friendList"]}],
                 "hasNext": True,
             },
             {
                 "incremental": [
                     {
                         "items": [None],
-                        "path": ["friendList", 1],
+                        "id": "0",
                         "errors": [
                             {
                                 "message": "Oops",
@@ -1349,17 +1222,10 @@ def describe_execute_stream_directive():
                 "hasNext": True,
             },
             {
-                "incremental": [
-                    {
-                        "items": [{"nonNullName": "Han"}],
-                        "path": ["friendList", 2],
-                    },
-                ],
+                "incremental": [{"items": [{"nonNullName": "Han"}], "id": "0"}],
                 "hasNext": True,
             },
-            {
-                "hasNext": False,
-            },
+            {"completed": [{"id": "0"}], "hasNext": False},
         ]
 
     @pytest.mark.asyncio
@@ -1378,7 +1244,6 @@ def describe_execute_stream_directive():
             raise RuntimeError("Oops")
 
         async def get_friend(i):
-            await sleep(0)
             return {"nonNullName": throw() if i < 0 else friends[i].name}
 
         async def get_friends(_info):
@@ -1387,22 +1252,18 @@ def describe_execute_stream_directive():
 
         result = await complete(
             document,
-            {
-                "nonNullFriendList": get_friends,
-            },
+            {"nonNullFriendList": get_friends},
         )
         assert result == [
             {
-                "data": {
-                    "nonNullFriendList": [{"nonNullName": "Luke"}],
-                },
+                "data": {"nonNullFriendList": [{"nonNullName": "Luke"}]},
+                "pending": [{"id": "0", "path": ["nonNullFriendList"]}],
                 "hasNext": True,
             },
             {
-                "incremental": [
+                "completed": [
                     {
-                        "items": None,
-                        "path": ["nonNullFriendList", 1],
+                        "id": "0",
                         "errors": [
                             {
                                 "message": "Oops",
@@ -1415,6 +1276,136 @@ def describe_execute_stream_directive():
                 "hasNext": False,
             },
         ]
+
+    @pytest.mark.asyncio
+    async def handles_async_errors_in_complete_value_after_initial_count_no_aclose():
+        # Handles async errors thrown by complete_value after initialCount is reached
+        # from async iterable for a non-nullable list when the async iterable does
+        # not provide an aclose method.
+        document = parse(
+            """
+            query {
+              nonNullFriendList @stream(initialCount: 1) {
+                nonNullName
+              }
+            }
+            """
+        )
+
+        async def throw():
+            raise RuntimeError("Oops")
+
+        class AsyncIterableWithoutAclose:
+            def __init__(self):
+                self.count = 0
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                count = self.count
+                self.count += 1
+                if count == 1:
+                    name = throw()
+                else:
+                    if count:
+                        count -= 1  # pragma: no cover
+                    name = friends[count].name
+                return {"nonNullName": name}
+
+        async_iterable = AsyncIterableWithoutAclose()
+        result = await complete(document, {"nonNullFriendList": async_iterable})
+        assert result == [
+            {
+                "data": {"nonNullFriendList": [{"nonNullName": "Luke"}]},
+                "pending": [{"id": "0", "path": ["nonNullFriendList"]}],
+                "hasNext": True,
+            },
+            {
+                "completed": [
+                    {
+                        "id": "0",
+                        "errors": [
+                            {
+                                "message": "Oops",
+                                "locations": [{"line": 4, "column": 17}],
+                                "path": ["nonNullFriendList", 1, "nonNullName"],
+                            },
+                        ],
+                    },
+                ],
+                "hasNext": False,
+            },
+        ]
+
+    @pytest.mark.asyncio
+    async def handles_async_errors_in_complete_value_after_initial_count_slow_aclose():
+        # Handles async errors thrown by completeValue after initialCount is reached
+        # from async iterable for a non-nullable list when the async iterable provides
+        # concurrent next/return methods and has a slow aclose()
+        document = parse(
+            """
+            query {
+              nonNullFriendList @stream(initialCount: 1) {
+                nonNullName
+              }
+            }
+            """
+        )
+
+        async def throw():
+            raise RuntimeError("Oops")
+
+        class AsyncIterableWithSlowAclose:
+            def __init__(self):
+                self.count = 0
+                self.finished = False
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if self.finished:
+                    raise StopAsyncIteration  # pragma: no cover
+                count = self.count
+                self.count += 1
+                if count == 1:
+                    name = throw()
+                else:
+                    if count:
+                        count -= 1  # pragma: no cover
+                    name = friends[count].name
+                return {"nonNullName": name}
+
+            async def aclose(self):
+                await sleep(0)
+                self.finished = True
+
+        async_iterable = AsyncIterableWithSlowAclose()
+        result = await complete(document, {"nonNullFriendList": async_iterable})
+        assert result == [
+            {
+                "data": {"nonNullFriendList": [{"nonNullName": "Luke"}]},
+                "pending": [{"id": "0", "path": ["nonNullFriendList"]}],
+                "hasNext": True,
+            },
+            {
+                "completed": [
+                    {
+                        "id": "0",
+                        "errors": [
+                            {
+                                "message": "Oops",
+                                "locations": [{"line": 4, "column": 17}],
+                                "path": ["nonNullFriendList", 1, "nonNullName"],
+                            },
+                        ],
+                    },
+                ],
+                "hasNext": False,
+            },
+        ]
+        assert async_iterable.finished
 
     @pytest.mark.asyncio
     async def filters_payloads_that_are_nulled():
@@ -1432,10 +1423,9 @@ def describe_execute_stream_directive():
         )
 
         async def resolve_null(_info):
-            await sleep(0)
+            return None
 
         async def friend_list(_info):
-            await sleep(0)
             yield friends[0]
 
         result = await complete(
@@ -1453,18 +1443,11 @@ def describe_execute_stream_directive():
                 {
                     "message": "Cannot return null for non-nullable field"
                     " NestedObject.nonNullScalarField.",
-                    "locations": [
-                        {
-                            "line": 4,
-                            "column": 17,
-                        }
-                    ],
+                    "locations": [{"line": 4, "column": 17}],
                     "path": ["nestedObject", "nonNullScalarField"],
                 },
             ],
-            "data": {
-                "nestedObject": None,
-            },
+            "data": {"nestedObject": None},
         }
 
     @pytest.mark.asyncio
@@ -1483,7 +1466,6 @@ def describe_execute_stream_directive():
         )
 
         async def friend_list(_info):
-            await sleep(0)  # pragma: no cover
             yield friends[0]  # pragma: no cover
 
         result = await complete(
@@ -1505,9 +1487,7 @@ def describe_execute_stream_directive():
                     "path": ["nestedObject", "nonNullScalarField"],
                 },
             ],
-            "data": {
-                "nestedObject": None,
-            },
+            "data": {"nestedObject": None},
         }
 
     @pytest.mark.asyncio
@@ -1531,11 +1511,9 @@ def describe_execute_stream_directive():
         )
 
         async def error_field(_info):
-            await sleep(0)
             raise RuntimeError("Oops")
 
         async def friend_list(_info):
-            await sleep(0)
             yield friends[0]
 
         result = await complete(
@@ -1554,13 +1532,17 @@ def describe_execute_stream_directive():
                     "otherNestedObject": {},
                     "nestedObject": {"nestedFriendList": []},
                 },
+                "pending": [
+                    {"id": "0", "path": ["otherNestedObject"]},
+                    {"id": "1", "path": ["nestedObject", "nestedFriendList"]},
+                ],
                 "hasNext": True,
             },
             {
                 "incremental": [
                     {
                         "data": {"scalarField": None},
-                        "path": ["otherNestedObject"],
+                        "id": "0",
                         "errors": [
                             {
                                 "message": "Oops",
@@ -1569,14 +1551,12 @@ def describe_execute_stream_directive():
                             },
                         ],
                     },
-                    {
-                        "items": [{"name": "Luke"}],
-                        "path": ["nestedObject", "nestedFriendList", 0],
-                    },
+                    {"items": [{"name": "Luke"}], "id": "1"},
                 ],
+                "completed": [{"id": "0"}],
                 "hasNext": True,
             },
-            {"hasNext": False},
+            {"completed": [{"id": "1"}], "hasNext": False},
         ]
 
     @pytest.mark.asyncio
@@ -1600,10 +1580,9 @@ def describe_execute_stream_directive():
         )
 
         async def resolve_null(_info):
-            await sleep(0)
+            return None
 
         async def friend_list(_info):
-            await sleep(0)
             yield friends[0]
 
         result = await complete(
@@ -1620,18 +1599,15 @@ def describe_execute_stream_directive():
 
         assert result == [
             {
-                "data": {
-                    "nestedObject": {},
-                },
+                "data": {"nestedObject": {}},
+                "pending": [{"id": "0", "path": ["nestedObject"]}],
                 "hasNext": True,
             },
             {
                 "incremental": [
                     {
-                        "data": {
-                            "deeperNestedObject": None,
-                        },
-                        "path": ["nestedObject"],
+                        "data": {"deeperNestedObject": None},
+                        "id": "0",
                         "errors": [
                             {
                                 "message": "Cannot return null for non-nullable field"
@@ -1646,11 +1622,13 @@ def describe_execute_stream_directive():
                         ],
                     },
                 ],
+                "completed": [{"id": "0"}],
                 "hasNext": False,
             },
         ]
 
     @pytest.mark.asyncio
+    @pytest.mark.filterwarnings("ignore:.* was never awaited:RuntimeWarning")
     async def filters_defer_payloads_that_are_nulled_in_a_stream_response():
         document = parse(
             """
@@ -1666,33 +1644,30 @@ def describe_execute_stream_directive():
         )
 
         async def resolve_null(_info):
-            await sleep(0)
+            return None
 
         async def friend():
-            await sleep(0)
             return {
                 "name": friends[0].name,
                 "nonNullName": resolve_null,
             }
 
         async def friend_list(_info):
-            await sleep(0)
             yield await friend()
 
         result = await complete(document, {"friendList": friend_list})
 
         assert result == [
             {
-                "data": {
-                    "friendList": [],
-                },
+                "data": {"friendList": []},
+                "pending": [{"id": "0", "path": ["friendList"]}],
                 "hasNext": True,
             },
             {
                 "incremental": [
                     {
                         "items": [None],
-                        "path": ["friendList", 0],
+                        "id": "0",
                         "errors": [
                             {
                                 "message": "Cannot return null for non-nullable field"
@@ -1705,9 +1680,7 @@ def describe_execute_stream_directive():
                 ],
                 "hasNext": True,
             },
-            {
-                "hasNext": False,
-            },
+            {"completed": [{"id": "0"}], "hasNext": False},
         ]
 
     @pytest.mark.timeout(1)
@@ -1716,15 +1689,14 @@ def describe_execute_stream_directive():
         finished = False
 
         async def resolve_null(_info):
-            await sleep(0)
+            return None
 
         async def iterable(_info):
             nonlocal finished
             for i in range(3):
-                await sleep(0)
                 friend = friends[i]
                 yield {"name": friend.name, "nonNullName": None}
-            finished = True  # pragma: no cover
+            finished = True
 
         document = parse(
             """
@@ -1760,14 +1732,20 @@ def describe_execute_stream_directive():
         iterator = execute_result.subsequent_results
 
         result1 = execute_result.initial_result
-        assert result1 == {"data": {"nestedObject": {}}, "hasNext": True}
+        assert result1 == {
+            "data": {"nestedObject": {}},
+            "pending": [{"id": "0", "path": ["nestedObject"]}],
+            "hasNext": True,
+        }
+
+        assert not finished
 
         result2 = await anext(iterator)
         assert result2.formatted == {
             "incremental": [
                 {
                     "data": {"deeperNestedObject": None},
-                    "path": ["nestedObject"],
+                    "id": "0",
                     "errors": [
                         {
                             "message": "Cannot return null for non-nullable field"
@@ -1782,13 +1760,14 @@ def describe_execute_stream_directive():
                     ],
                 },
             ],
+            "completed": [{"id": "0"}],
             "hasNext": False,
         }
 
         with pytest.raises(StopAsyncIteration):
             await anext(iterator)
 
-        assert not finished  # running iterator cannot be canceled
+        assert finished
 
     @pytest.mark.asyncio
     async def handles_awaitables_from_complete_value_after_initial_count_is_reached():
@@ -1804,11 +1783,9 @@ def describe_execute_stream_directive():
         )
 
         async def get_friend_name(i):
-            await sleep(0)
             return friends[i].name
 
         async def get_friend(i):
-            await sleep(0)
             if i < 2:
                 return friends[i]
             return {"id": friends[2].id, "name": get_friend_name(i)}
@@ -1825,32 +1802,19 @@ def describe_execute_stream_directive():
         )
         assert result == [
             {
-                "data": {
-                    "friendList": [{"id": "1", "name": "Luke"}],
-                },
+                "data": {"friendList": [{"id": "1", "name": "Luke"}]},
+                "pending": [{"id": "0", "path": ["friendList"]}],
                 "hasNext": True,
             },
             {
-                "incremental": [
-                    {
-                        "items": [{"id": "2", "name": "Han"}],
-                        "path": ["friendList", 1],
-                    }
-                ],
+                "incremental": [{"items": [{"id": "2", "name": "Han"}], "id": "0"}],
                 "hasNext": True,
             },
             {
-                "incremental": [
-                    {
-                        "items": [{"id": "3", "name": "Leia"}],
-                        "path": ["friendList", 2],
-                    }
-                ],
+                "incremental": [{"items": [{"id": "3", "name": "Leia"}], "id": "0"}],
                 "hasNext": True,
             },
-            {
-                "hasNext": False,
-            },
+            {"completed": [{"id": "0"}], "hasNext": False},
         ]
 
     @pytest.mark.asyncio
@@ -1877,7 +1841,6 @@ def describe_execute_stream_directive():
 
         async def get_nested_friend_list(_info):
             for i in range(2):
-                await sleep(0)
                 yield friends[i]
 
         result = await complete(
@@ -1889,142 +1852,26 @@ def describe_execute_stream_directive():
             },
         )
 
-        assert result in (
-            # exact order of results depends on timing and Python version
-            [
-                {
-                    "data": {"nestedObject": {"nestedFriendList": []}},
-                    "hasNext": True,
-                },
-                {
-                    "incremental": [
-                        {
-                            "items": [{"id": "1"}],
-                            "path": ["nestedObject", "nestedFriendList", 0],
-                        },
-                        {"data": {"nestedFriendList": []}, "path": ["nestedObject"]},
-                    ],
-                    "hasNext": True,
-                },
-                {
-                    "incremental": [
-                        {
-                            "items": [{"id": "2"}],
-                            "path": ["nestedObject", "nestedFriendList", 1],
-                        },
-                        {
-                            "items": [{"id": "1", "name": "Luke"}],
-                            "path": ["nestedObject", "nestedFriendList", 0],
-                        },
-                    ],
-                    "hasNext": True,
-                },
-                {
-                    "incremental": [
-                        {
-                            "items": [{"id": "2", "name": "Han"}],
-                            "path": ["nestedObject", "nestedFriendList", 1],
-                        },
-                    ],
-                    "hasNext": True,
-                },
-                {
-                    "hasNext": False,
-                },
-            ],
-            [
-                {
-                    "data": {"nestedObject": {"nestedFriendList": []}},
-                    "hasNext": True,
-                },
-                {
-                    "incremental": [
-                        {
-                            "items": [{"id": "1"}],
-                            "path": ["nestedObject", "nestedFriendList", 0],
-                        },
-                    ],
-                    "hasNext": True,
-                },
-                {
-                    "incremental": [
-                        {
-                            "items": [{"id": "2"}],
-                            "path": ["nestedObject", "nestedFriendList", 1],
-                        },
-                        {"data": {"nestedFriendList": []}, "path": ["nestedObject"]},
-                    ],
-                    "hasNext": True,
-                },
-                {
-                    "incremental": [
-                        {
-                            "items": [{"id": "1", "name": "Luke"}],
-                            "path": ["nestedObject", "nestedFriendList", 0],
-                        },
-                    ],
-                    "hasNext": True,
-                },
-                {
-                    "incremental": [
-                        {
-                            "items": [{"id": "2", "name": "Han"}],
-                            "path": ["nestedObject", "nestedFriendList", 1],
-                        },
-                    ],
-                    "hasNext": True,
-                },
-                {
-                    "hasNext": False,
-                },
-            ],
-            [
-                {"data": {"nestedObject": {"nestedFriendList": []}}, "hasNext": True},
-                {
-                    "incremental": [
-                        {
-                            "items": [{"id": "1"}],
-                            "path": ["nestedObject", "nestedFriendList", 0],
-                        }
-                    ],
-                    "hasNext": True,
-                },
-                {
-                    "incremental": [
-                        {
-                            "items": [{"id": "2"}],
-                            "path": ["nestedObject", "nestedFriendList", 1],
-                        }
-                    ],
-                    "hasNext": True,
-                },
-                {
-                    "incremental": [
-                        {"data": {"nestedFriendList": []}, "path": ["nestedObject"]}
-                    ],
-                    "hasNext": True,
-                },
-                {
-                    "incremental": [
-                        {
-                            "items": [{"id": "1", "name": "Luke"}],
-                            "path": ["nestedObject", "nestedFriendList", 0],
-                        }
-                    ],
-                    "hasNext": True,
-                },
-                {
-                    "incremental": [
-                        {
-                            "items": [{"id": "2", "name": "Han"}],
-                            "path": ["nestedObject", "nestedFriendList", 1],
-                        }
-                    ],
-                    "hasNext": True,
-                },
-                {"hasNext": False},
-            ],
-        )
+        assert result == [
+            {
+                "data": {"nestedObject": {"nestedFriendList": []}},
+                "pending": [
+                    {"id": "0", "path": ["nestedObject"]},
+                    {"id": "1", "path": ["nestedObject", "nestedFriendList"]},
+                ],
+                "hasNext": True,
+            },
+            {
+                "incremental": [{"items": [{"id": "1", "name": "Luke"}], "id": "1"}],
+                "completed": [{"id": "0"}],
+                "hasNext": True,
+            },
+            {
+                "incremental": [{"items": [{"id": "2", "name": "Han"}], "id": "1"}],
+                "hasNext": True,
+            },
+            {"completed": [{"id": "1"}], "hasNext": False},
+        ]
 
     @pytest.mark.asyncio
     async def returns_payloads_properly_when_parent_deferred_slower_than_stream():
@@ -2052,7 +1899,6 @@ def describe_execute_stream_directive():
 
         async def get_friends(_info):
             for i in range(2):
-                await sleep(0)
                 yield friends[i]
 
         execute_result = experimental_execute_incrementally(
@@ -2070,43 +1916,34 @@ def describe_execute_stream_directive():
         iterator = execute_result.subsequent_results
 
         result1 = execute_result.initial_result
-        assert result1 == {"data": {"nestedObject": {}}, "hasNext": True}
+        assert result1 == {
+            "data": {"nestedObject": {}},
+            "pending": [{"id": "0", "path": ["nestedObject"]}],
+            "hasNext": True,
+        }
 
         resolve_slow_field.set()
         result2 = await anext(iterator)
         assert result2.formatted == {
+            "pending": [{"id": "1", "path": ["nestedObject", "nestedFriendList"]}],
             "incremental": [
-                {
-                    "data": {"scalarField": "slow", "nestedFriendList": []},
-                    "path": ["nestedObject"],
-                },
+                {"data": {"scalarField": "slow", "nestedFriendList": []}, "id": "0"},
             ],
+            "completed": [{"id": "0"}],
             "hasNext": True,
         }
         result3 = await anext(iterator)
         assert result3.formatted == {
-            "incremental": [
-                {
-                    "items": [{"name": "Luke"}],
-                    "path": ["nestedObject", "nestedFriendList", 0],
-                },
-            ],
+            "incremental": [{"items": [{"name": "Luke"}], "id": "1"}],
             "hasNext": True,
         }
         result4 = await anext(iterator)
         assert result4.formatted == {
-            "incremental": [
-                {
-                    "items": [{"name": "Han"}],
-                    "path": ["nestedObject", "nestedFriendList", 1],
-                },
-            ],
+            "incremental": [{"items": [{"name": "Han"}], "id": "1"}],
             "hasNext": True,
         }
         result5 = await anext(iterator)
-        assert result5.formatted == {
-            "hasNext": False,
-        }
+        assert result5.formatted == {"completed": [{"id": "1"}], "hasNext": False}
 
         with pytest.raises(StopAsyncIteration):
             await anext(iterator)
@@ -2136,9 +1973,7 @@ def describe_execute_stream_directive():
         )
 
         async def get_friends(_info):
-            await sleep(0)
             yield friends[0]
-            await sleep(0)
             yield {"id": friends[1].id, "name": slow_field}
             await resolve_iterable.wait()
 
@@ -2154,36 +1989,37 @@ def describe_execute_stream_directive():
         iterator = execute_result.subsequent_results
 
         result1 = execute_result.initial_result
-        assert result1 == {"data": {"friendList": [{"id": "1"}]}, "hasNext": True}
+        assert result1 == {
+            "data": {"friendList": [{"id": "1"}]},
+            "pending": [
+                {"id": "0", "path": ["friendList", 0], "label": "DeferName"},
+                {"id": "1", "path": ["friendList"], "label": "stream-label"},
+            ],
+            "hasNext": True,
+        }
 
         resolve_iterable.set()
         result2 = await anext(iterator)
         assert result2.formatted == {
+            "pending": [{"id": "2", "path": ["friendList", 1], "label": "DeferName"}],
             "incremental": [
-                {
-                    "data": {"name": "Luke"},
-                    "path": ["friendList", 0],
-                    "label": "DeferName",
-                },
-                {
-                    "items": [{"id": "2"}],
-                    "path": ["friendList", 1],
-                    "label": "stream-label",
-                },
+                {"data": {"name": "Luke"}, "id": "0"},
+                {"items": [{"id": "2"}], "id": "1"},
             ],
+            "completed": [{"id": "0"}],
             "hasNext": True,
         }
 
         resolve_slow_field.set()
         result3 = await anext(iterator)
         assert result3.formatted == {
-            "incremental": [
-                {
-                    "data": {"name": "Han"},
-                    "path": ["friendList", 1],
-                    "label": "DeferName",
-                },
-            ],
+            "completed": [{"id": "1"}],
+            "hasNext": True,
+        }
+        result4 = await anext(iterator)
+        assert result4.formatted == {
+            "incremental": [{"data": {"name": "Han"}, "id": "2"}],
+            "completed": [{"id": "2"}],
             "hasNext": False,
         }
 
@@ -2214,11 +2050,8 @@ def describe_execute_stream_directive():
         )
 
         async def get_friends(_info):
-            await sleep(0)
             yield friends[0]
-            await sleep(0)
             yield {"id": friends[1].id, "name": slow_field}
-            await sleep(0)
             await resolve_iterable.wait()
 
         execute_result = await experimental_execute_incrementally(  # type: ignore
@@ -2233,41 +2066,40 @@ def describe_execute_stream_directive():
         iterator = execute_result.subsequent_results
 
         result1 = execute_result.initial_result
-        assert result1 == {"data": {"friendList": [{"id": "1"}]}, "hasNext": True}
+        assert result1 == {
+            "data": {"friendList": [{"id": "1"}]},
+            "pending": [
+                {"id": "0", "path": ["friendList", 0], "label": "DeferName"},
+                {"id": "1", "path": ["friendList"], "label": "stream-label"},
+            ],
+            "hasNext": True,
+        }
 
         resolve_slow_field.set()
         result2 = await anext(iterator)
         assert result2.formatted == {
+            "pending": [{"id": "2", "path": ["friendList", 1], "label": "DeferName"}],
             "incremental": [
-                {
-                    "data": {"name": "Luke"},
-                    "path": ["friendList", 0],
-                    "label": "DeferName",
-                },
-                {
-                    "items": [{"id": "2"}],
-                    "path": ["friendList", 1],
-                    "label": "stream-label",
-                },
+                {"data": {"name": "Luke"}, "id": "0"},
+                {"items": [{"id": "2"}], "id": "1"},
             ],
+            "completed": [{"id": "0"}],
             "hasNext": True,
         }
 
         result3 = await anext(iterator)
         assert result3.formatted == {
             "incremental": [
-                {
-                    "data": {"name": "Han"},
-                    "path": ["friendList", 1],
-                    "label": "DeferName",
-                },
+                {"data": {"name": "Han"}, "id": "2"},
             ],
+            "completed": [{"id": "2"}],
             "hasNext": True,
         }
 
         resolve_iterable.set()
         result4 = await anext(iterator)
         assert result4.formatted == {
+            "completed": [{"id": "1"}],
             "hasNext": False,
         }
 
@@ -2275,13 +2107,12 @@ def describe_execute_stream_directive():
             await anext(iterator)
 
     @pytest.mark.asyncio
-    async def finishes_async_iterable_when_returned_generator_is_closed():
+    async def finishes_async_iterable_when_finished_generator_is_closed():
         finished = False
 
         async def iterable(_info):
             nonlocal finished
             for i in range(3):
-                await sleep(0)
                 yield friends[i]
             finished = True
 
@@ -2305,13 +2136,19 @@ def describe_execute_stream_directive():
         iterator = execute_result.subsequent_results
 
         result1 = execute_result.initial_result
-        assert result1 == {"data": {"friendList": [{"id": "1"}]}, "hasNext": True}
+        assert result1 == {
+            "data": {"friendList": [{"id": "1"}]},
+            "pending": [
+                {"id": "0", "path": ["friendList", 0]},
+                {"id": "1", "path": ["friendList"]},
+            ],
+            "hasNext": True,
+        }
 
         await iterator.aclose()
         with pytest.raises(StopAsyncIteration):
             await anext(iterator)
 
-        await sleep(0)
         assert finished
 
     @pytest.mark.asyncio
@@ -2324,7 +2161,6 @@ def describe_execute_stream_directive():
                 return self
 
             async def __anext__(self):
-                await sleep(0)
                 index = self.index
                 self.index = index + 1
                 try:
@@ -2354,6 +2190,7 @@ def describe_execute_stream_directive():
         result1 = execute_result.initial_result
         assert result1 == {
             "data": {"friendList": [{"id": "1", "name": "Luke"}]},
+            "pending": [{"id": "0", "path": ["friendList"]}],
             "hasNext": True,
         }
 
@@ -2361,18 +2198,15 @@ def describe_execute_stream_directive():
         with pytest.raises(StopAsyncIteration):
             await anext(iterator)
 
-        await sleep(0)
-        await sleep(0)
         assert iterable.index == 4
 
     @pytest.mark.asyncio
-    async def finishes_async_iterable_when_error_is_raised_in_returned_generator():
+    async def finishes_async_iterable_when_error_is_raised_in_finished_generator():
         finished = False
 
         async def iterable(_info):
             nonlocal finished
             for i in range(3):
-                await sleep(0)
                 yield friends[i]
             finished = True
 
@@ -2396,7 +2230,14 @@ def describe_execute_stream_directive():
         iterator = execute_result.subsequent_results
 
         result1 = execute_result.initial_result
-        assert result1 == {"data": {"friendList": [{"id": "1"}]}, "hasNext": True}
+        assert result1 == {
+            "data": {"friendList": [{"id": "1"}]},
+            "pending": [
+                {"id": "0", "path": ["friendList", 0]},
+                {"id": "1", "path": ["friendList"]},
+            ],
+            "hasNext": True,
+        }
 
         with pytest.raises(RuntimeError, match="bad"):
             await iterator.athrow(RuntimeError("bad"))
@@ -2404,5 +2245,4 @@ def describe_execute_stream_directive():
         with pytest.raises(StopAsyncIteration):
             await anext(iterator)
 
-        await sleep(0)
         assert finished

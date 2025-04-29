@@ -20,20 +20,20 @@ except ImportError:  # Python < 3.10
     from typing_extensions import TypeGuard
 
 __all__ = [
-    "is_directive",
-    "assert_directive",
-    "is_specified_directive",
-    "specified_directives",
+    "DEFAULT_DEPRECATION_REASON",
+    "DirectiveLocation",
     "GraphQLDeferDirective",
+    "GraphQLDeprecatedDirective",
     "GraphQLDirective",
     "GraphQLDirectiveKwargs",
     "GraphQLIncludeDirective",
     "GraphQLSkipDirective",
-    "GraphQLStreamDirective",
-    "GraphQLDeprecatedDirective",
     "GraphQLSpecifiedByDirective",
-    "DirectiveLocation",
-    "DEFAULT_DEPRECATION_REASON",
+    "GraphQLStreamDirective",
+    "assert_directive",
+    "is_directive",
+    "is_specified_directive",
+    "specified_directives",
 ]
 
 
@@ -261,12 +261,13 @@ GraphQLSpecifiedByDirective = GraphQLDirective(
     description="Exposes a URL that specifies the behavior of this scalar.",
 )
 
-# Used to declare an Input Object as a OneOf Input Objects.
+# Used to indicate an Input Object is a OneOf Input Object.
 GraphQLOneOfDirective = GraphQLDirective(
     name="oneOf",
     locations=[DirectiveLocation.INPUT_OBJECT],
     args={},
-    description="Indicates an Input Object is a OneOf Input Object.",
+    description="Indicates exactly one field must be supplied"
+    " and this field must not be `null`.",
 )
 
 specified_directives: tuple[GraphQLDirective, ...] = (

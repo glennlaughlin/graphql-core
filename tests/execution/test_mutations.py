@@ -242,17 +242,14 @@ def describe_execute_handles_mutation_execution_ordering():
             patches.append(patch.formatted)
 
         assert patches == [
-            {"data": {"first": {}, "second": {"theNumber": 2}}, "hasNext": True},
             {
-                "incremental": [
-                    {
-                        "label": "defer-label",
-                        "path": ["first"],
-                        "data": {
-                            "promiseToGetTheNumber": 2,
-                        },
-                    },
-                ],
+                "data": {"first": {}, "second": {"theNumber": 2}},
+                "pending": [{"id": "0", "path": ["first"], "label": "defer-label"}],
+                "hasNext": True,
+            },
+            {
+                "incremental": [{"id": "0", "data": {"promiseToGetTheNumber": 2}}],
+                "completed": [{"id": "0"}],
                 "hasNext": False,
             },
         ]
@@ -313,17 +310,14 @@ def describe_execute_handles_mutation_execution_ordering():
             patches.append(patch.formatted)
 
         assert patches == [
-            {"data": {"second": {"theNumber": 2}}, "hasNext": True},
             {
-                "incremental": [
-                    {
-                        "label": "defer-label",
-                        "path": [],
-                        "data": {
-                            "first": {"theNumber": 1},
-                        },
-                    },
-                ],
+                "data": {"second": {"theNumber": 2}},
+                "pending": [{"id": "0", "path": [], "label": "defer-label"}],
+                "hasNext": True,
+            },
+            {
+                "incremental": [{"id": "0", "data": {"first": {"theNumber": 1}}}],
+                "completed": [{"id": "0"}],
                 "hasNext": False,
             },
         ]

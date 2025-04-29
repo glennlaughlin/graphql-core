@@ -216,11 +216,8 @@ def find_type_changes(
             schema_changes.extend(find_union_type_changes(old_type, new_type))
         elif is_input_object_type(old_type) and is_input_object_type(new_type):
             schema_changes.extend(find_input_object_type_changes(old_type, new_type))
-        elif (
-            is_object_type(old_type)
-            and is_object_type(new_type)
-            or is_interface_type(old_type)
-            and is_interface_type(new_type)
+        elif (is_object_type(old_type) and is_object_type(new_type)) or (
+            is_interface_type(old_type) and is_interface_type(new_type)
         ):
             schema_changes.extend(find_field_changes(old_type, new_type))
             schema_changes.extend(
@@ -297,7 +294,7 @@ def find_union_type_changes(
         schema_changes.append(
             DangerousChange(
                 DangerousChangeType.TYPE_ADDED_TO_UNION,
-                f"{possible_type.name} was added" f" to union type {old_type.name}.",
+                f"{possible_type.name} was added to union type {old_type.name}.",
             )
         )
 
@@ -410,7 +407,7 @@ def find_arg_changes(
         schema_changes.append(
             BreakingChange(
                 BreakingChangeType.ARG_REMOVED,
-                f"{old_type.name}.{field_name} arg" f" {arg_name} was removed.",
+                f"{old_type.name}.{field_name} arg {arg_name} was removed.",
             )
         )
 

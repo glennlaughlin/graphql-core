@@ -19,7 +19,6 @@ except ImportError:  # Python < 3.10
 
 
 __all__ = [
-    "get_introspection_query",
     "IntrospectionDirective",
     "IntrospectionEnumType",
     "IntrospectionField",
@@ -35,6 +34,7 @@ __all__ = [
     "IntrospectionType",
     "IntrospectionTypeRef",
     "IntrospectionUnionType",
+    "get_introspection_query",
 ]
 
 
@@ -302,7 +302,9 @@ class IntrospectionSchema(MaybeWithDescription):
     directives: list[IntrospectionDirective]
 
 
-class IntrospectionQuery(TypedDict):
-    """The root typed dictionary for schema introspections."""
-
-    __schema: IntrospectionSchema
+# The root typed dictionary for schema introspections.
+# Note: We don't use class syntax here since the key looks like a private attribute.
+IntrospectionQuery = TypedDict(  # noqa: UP013
+    "IntrospectionQuery",
+    {"__schema": IntrospectionSchema},
+)
